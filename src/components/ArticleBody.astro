@@ -1,0 +1,960 @@
+---
+// Renders the prepared WP `content.rendered` HTML with article-typography
+// rules. Expects the HTML to have already been processed through
+// `preparePostBody(html, wpBase)` from lib/html.ts (link rewrites, gallery
+// transforms, heading ids).
+
+interface Props {
+	html: string;
+}
+
+const { html } = Astro.props;
+
+---
+
+<div class="post-body" set:html={html} />
+
+<style is:global>
+	/*
+	 * Styles for HTML emitted by WP `content.rendered`. Has to be global
+	 * because Astro's scoped styles don't reach content injected via set:html.
+	 * Scoped under .post-body so nothing leaks to unrelated parts of the
+	 * site.
+	 */
+
+	.post-body {
+		font-size: 1.08rem;
+		line-height: 1.75;
+		color: var(--text);
+	}
+
+	.post-body p {
+		margin: 0 0 1.25rem;
+	}
+
+	.post-body h2 {
+		font-size: clamp(1.45rem, 2.2vw, 1.85rem);
+		font-weight: 800;
+		line-height: 1.2;
+		letter-spacing: -0.01em;
+		margin: 2.75rem 0 1rem;
+		scroll-margin-top: 120px;
+		display: flex;
+		align-items: center;
+	}
+
+	.post-body h2::before {
+		content: '';
+		display: inline-block;
+		width: 4px;
+		height: 0.95em;
+		background: var(--accent);
+		margin-right: 0.7rem;
+		flex-shrink: 0;
+	}
+
+	.post-body h3 {
+		font-size: clamp(1.15rem, 1.6vw, 1.35rem);
+		font-weight: 800;
+		line-height: 1.25;
+		margin: 2rem 0 0.85rem;
+		scroll-margin-top: 120px;
+	}
+
+	/* h4/h5/h6 frequently appear as compact column subheadings in
+	 * migrated-from-Tipi pages (e.g. "Production Models" / "Concepts
+	 * & Prototypes" labels above categorised lists). Mirror TipiHtml's
+	 * treatment so migrated pages match the Tipi look. */
+	.post-body h4 {
+		font-size: 0.78rem;
+		font-weight: 800;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--text-dim, #a1a7b0);
+		margin: 1.25rem 0 0.5rem;
+		padding-bottom: 0.4rem;
+		border-bottom: 1px solid var(--border, #272c33);
+	}
+
+	.post-body h5 {
+		font-size: 0.92rem;
+		font-weight: 800;
+		margin: 1.25rem 0 0.45rem;
+	}
+
+	.post-body h6 {
+		font-size: 0.85rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-dim);
+		margin: 1.1rem 0 0.4rem;
+	}
+
+	.post-body a {
+		color: var(--accent);
+		text-decoration: underline;
+		text-underline-offset: 3px;
+		text-decoration-thickness: 1px;
+	}
+
+	.post-body a:hover {
+		color: var(--accent-hot);
+		text-decoration-thickness: 2px;
+	}
+
+	.post-body strong {
+		color: var(--text);
+		font-weight: 700;
+	}
+
+	.post-body ul,
+	.post-body ol {
+		margin: 0 0 1.25rem;
+		padding-left: 1.25rem;
+	}
+
+	/* Tipi authors typically wrap each <li>'s content in a <p>. The
+	 * default <p> bottom margin then double-spaces every bullet, which
+	 * reads stretched-out on the migrated category lists. Reset the
+	 * paragraph margin inside list items so lists stay compact. */
+	.post-body li {
+		margin-bottom: 0.3rem;
+		line-height: 1.4;
+	}
+
+	.post-body li > p {
+		margin: 0;
+	}
+
+	.post-body li > p + p {
+		margin-top: 0.25rem;
+	}
+
+	.post-body li::marker {
+		color: var(--text-muted, #6b7280);
+	}
+
+	.post-body blockquote {
+		border-left: 4px solid var(--accent);
+		padding: 0.5rem 0 0.5rem 1.5rem;
+		margin: 2rem 0;
+		color: var(--text-dim);
+		font-style: italic;
+		font-size: 1.12rem;
+		line-height: 1.55;
+	}
+
+	.post-body blockquote p:last-child {
+		margin-bottom: 0;
+	}
+
+	/* Inline images, figures, captions */
+	.post-body img {
+		max-width: 100%;
+		height: auto;
+		display: block;
+		border-radius: var(--radius, 4px);
+		margin: 2rem auto;
+	}
+
+	.post-body figure {
+		margin: 2rem 0;
+	}
+
+	.post-body figure img {
+		margin: 0;
+	}
+
+	.post-body figcaption {
+		margin-top: 0.65rem;
+		font-size: 0.85rem;
+		color: var(--text-dim);
+		text-align: center;
+		font-style: italic;
+		line-height: 1.45;
+	}
+
+	.post-body figcaption a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+
+	/* Tables (WP block: core/table) */
+	.post-body table {
+		width: 100%;
+		border-collapse: collapse;
+		margin: 2rem 0;
+		font-size: 0.95rem;
+	}
+
+	.post-body table thead {
+		background: var(--bg-elev);
+	}
+
+	.post-body table th,
+	.post-body table td {
+		padding: 0.75rem 0.95rem;
+		text-align: left;
+		border-bottom: 1px solid var(--border);
+	}
+
+	.post-body table th {
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		font-size: 0.78rem;
+		color: var(--text-dim);
+	}
+
+	.post-body table tr:hover td {
+		background: var(--bg-elev-2);
+	}
+
+	/* code / pre — defensive in case posts ever include code blocks */
+	.post-body code {
+		background: var(--bg-elev);
+		padding: 0.15rem 0.4rem;
+		border-radius: 3px;
+		font-size: 0.92em;
+	}
+
+	.post-body pre {
+		background: var(--bg-elev);
+		padding: 1rem 1.2rem;
+		border-radius: var(--radius);
+		overflow-x: auto;
+		font-size: 0.9rem;
+		line-height: 1.55;
+		margin: 1.5rem 0;
+	}
+
+	.post-body pre code {
+		background: transparent;
+		padding: 0;
+	}
+
+	/*
+	 * Gallery grid emitted by transformGalleries() in lib/html.ts. Replaces
+	 * WP's .wp-block-gallery markup. 2/3/4 columns by item count, with each
+	 * item a square crop and an optional caption underneath.
+	 */
+	.post-body .sq-gallery {
+		display: grid;
+		gap: 0.6rem;
+		margin: 2rem 0;
+	}
+
+	.post-body .sq-gallery--cols-2 { grid-template-columns: repeat(2, 1fr); }
+	.post-body .sq-gallery--cols-3 { grid-template-columns: repeat(3, 1fr); }
+	.post-body .sq-gallery--cols-4 { grid-template-columns: repeat(2, 1fr); }
+
+	@media (min-width: 800px) {
+		.post-body .sq-gallery--cols-4 { grid-template-columns: repeat(4, 1fr); }
+	}
+
+	.post-body .sq-gallery__item {
+		margin: 0;
+		background: var(--bg-elev);
+		border-radius: var(--radius);
+		overflow: hidden;
+	}
+
+	.post-body .sq-gallery__item img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		aspect-ratio: 4 / 3;
+		margin: 0;
+		border-radius: 0;
+		display: block;
+		transition: transform 0.3s ease;
+	}
+
+	/* Gallery thumbnails are wrapped in an <a> that opens the full
+	 * image in a new tab (transformGalleries preserves the parent
+	 * link / falls back to deriving the master URL from the src).
+	 * Mirror Tipi's magnifying-glass cursor + subtle zoom on hover. */
+	.post-body .sq-gallery__link {
+		display: block;
+		width: 100%;
+		height: 100%;
+		cursor: zoom-in;
+	}
+
+	.post-body .sq-gallery__link:hover img,
+	.post-body .sq-gallery__link:focus-visible img {
+		transform: scale(1.03);
+	}
+
+	.post-body .sq-gallery__link:focus-visible {
+		outline: 2px solid var(--accent, #e63946);
+		outline-offset: 2px;
+	}
+
+	.post-body .sq-gallery__item figcaption {
+		font-size: 0.78rem;
+		padding: 0.55rem 0.7rem;
+		color: var(--text-dim);
+		text-align: left;
+		font-style: normal;
+		margin: 0;
+	}
+
+	/*
+	 * Strip residual WP wrapper classes that ship inside content.rendered.
+	 * They don't break anything but they introduce spacing surprises.
+	 */
+	.post-body .wp-block-image {
+		margin: 2rem 0;
+	}
+
+	.post-body .wp-block-image img {
+		margin: 0;
+	}
+
+	.post-body .has-text-align-center {
+		text-align: center;
+	}
+
+	/*
+	 * Gutenberg core-block styles. Astro doesn't pull in WP's block-library
+	 * stylesheet (no <head> from WP at all), so the classes emitted by the
+	 * Tipi→Gutenberg migration would render unstyled. These rules implement
+	 * the layout subset of core block CSS that the source pages actually
+	 * use: columns, cover, buttons, gallery, quote. Mirrors WP's 782px
+	 * breakpoint for column stacking so the look matches the live site.
+	 */
+
+	/* --- columns: side-by-side on tablet+, stack on mobile --- */
+	.post-body .wp-block-columns {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 2rem;
+		margin: 2rem 0;
+		align-items: flex-start;
+	}
+
+	.post-body .wp-block-column {
+		flex-grow: 1;
+		flex-basis: 100%;
+		min-width: 0;
+	}
+
+	@media (min-width: 782px) {
+		.post-body .wp-block-columns {
+			flex-wrap: nowrap;
+		}
+		.post-body .wp-block-column {
+			flex-basis: 0;
+		}
+	}
+
+	/* Card treatment for multi-column children — mirrors TipiColumns
+	 * (the "3-column categorised list" pattern: each column reads as a
+	 * tinted bordered card rather than a loose stack of text). Single-
+	 * column wrappers (commonly used to host a post-grid placeholder)
+	 * stay flush — :has() targets columns only when they have a sibling. */
+	.post-body .wp-block-columns:has(> .wp-block-column:nth-child(2)) > .wp-block-column {
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 6px;
+		padding: 1rem 1.25rem;
+	}
+
+	/* --- cover: full-bleed image with optional overlay text --- */
+	.post-body .wp-block-cover {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 280px;
+		margin: 2rem 0;
+		overflow: hidden;
+		border-radius: var(--radius);
+		background-position: 50% 50%;
+		background-size: cover;
+	}
+
+	.post-body .wp-block-cover__image-background {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		margin: 0;
+		border-radius: 0;
+		z-index: 0;
+	}
+
+	.post-body .wp-block-cover__background {
+		position: absolute;
+		inset: 0;
+		z-index: 1;
+		background-color: rgba(0, 0, 0, 0.5);
+	}
+
+	.post-body .wp-block-cover__inner-container {
+		position: relative;
+		z-index: 2;
+		color: #fff;
+		text-align: center;
+		padding: 1.5rem;
+		max-width: 90%;
+	}
+
+	.post-body .wp-block-cover__inner-container :is(h1, h2, h3, h4) {
+		color: #fff;
+		margin: 0;
+	}
+
+	/* wp:cover heroes emit a `.hero-kicker` div for the small uppercase
+	 * tagline above the headline and a `.hero-title` div for the main H1.
+	 * Both inherit the inner container's white text but need their own
+	 * typography. Mirrors
+	 * TipiHero.astro so migrated and Tipi-rendered heroes match. */
+	.post-body .wp-block-cover .hero-kicker {
+		font-size: 0.85rem;
+		font-weight: 700;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		margin-bottom: 0.75rem;
+		opacity: 0.95;
+		text-shadow:
+			0 0 4px rgba(0, 0, 0, 0.85),
+			0 2px 8px rgba(0, 0, 0, 0.6);
+	}
+
+	.post-body .wp-block-cover .hero-kicker :is(p, h1, h2, h3, h4) {
+		margin: 0;
+		color: inherit;
+		font-size: inherit;
+		font-weight: inherit;
+	}
+
+	/* Migration now strips the outer <h1> from the hero title (kept the
+	 * single page H1 in <h1 class="wp-page__title">), so .hero-title is
+	 * a plain div carrying the text. Style the container directly so
+	 * we don't depend on an inner heading. Still scope nested headings
+	 * in case the editor wrote one inside the title field. */
+	.post-body .wp-block-cover .hero-title {
+		font-size: clamp(2rem, 5vw, 4rem);
+		font-weight: 900;
+		line-height: 1.05;
+		letter-spacing: -0.01em;
+		text-shadow:
+			0 0 6px rgba(0, 0, 0, 0.85),
+			0 2px 18px rgba(0, 0, 0, 0.55);
+	}
+
+	.post-body .wp-block-cover .hero-title :is(h1, h2, h3, h4, p) {
+		font-size: inherit;
+		font-weight: inherit;
+		line-height: inherit;
+		margin: 0;
+		color: inherit;
+	}
+
+	.post-body .wp-block-cover .hero-title :is(h2, h3, h4)::before {
+		display: none;
+	}
+
+	/* --- buttons: pill-styled accent link --- */
+	.post-body .wp-block-buttons {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 1.5rem 0;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.post-body .wp-block-button {
+		display: inline-block;
+		margin: 0;
+	}
+
+	.post-body .wp-block-button__link {
+		display: inline-block;
+		background-color: var(--accent);
+		color: #fff;
+		padding: 0.6em 1.4em;
+		font-size: 1rem;
+		font-weight: 600;
+		text-decoration: none;
+		border-radius: 999px;
+		border: none;
+		line-height: 1.3;
+	}
+
+	.post-body .wp-block-button__link:hover {
+		filter: brightness(1.1);
+	}
+
+	/* --- gallery: 3-up grid (matches the .sq-gallery--cols-3 look) --- */
+	.post-body .wp-block-gallery.has-nested-images {
+		display: grid;
+		grid-template-columns: repeat(2, 1fr);
+		gap: 0.6rem;
+		margin: 2rem 0;
+	}
+
+	@media (min-width: 800px) {
+		.post-body .wp-block-gallery.has-nested-images {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+
+	.post-body .wp-block-gallery.has-nested-images .wp-block-image {
+		margin: 0;
+		background: var(--bg-elev);
+		border-radius: var(--radius);
+		overflow: hidden;
+	}
+
+	.post-body .wp-block-gallery.has-nested-images .wp-block-image img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		aspect-ratio: 4 / 3;
+		margin: 0;
+		display: block;
+	}
+
+	/* --- query loop: post-grid markup emitted by core/query, the
+	 * migration's replacement for the old Tipi post-grid blocks.
+	 * Renders server-side via the_content, so both live www and
+	 * Astro receive identical HTML. Mirrors the visual treatment of
+	 * the old .tipi-grid (3-up grid of image+title+date+excerpt
+	 * cards) without needing custom JS replacement. --- */
+	.post-body .wp-block-query.staticq-query {
+		margin: 2rem 0;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-template {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 1.25rem;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-template > li {
+		background: var(--bg-elev, #161a1f);
+		border-radius: 6px;
+		overflow: hidden;
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+		padding: 0;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-template > li:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-featured-image {
+		margin: 0;
+		aspect-ratio: 4 / 3;
+		overflow: hidden;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-featured-image img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+		margin: 0;
+		border-radius: 0;
+		transition: transform 0.4s ease;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-template > li:hover .wp-block-post-featured-image img {
+		transform: scale(1.04);
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-title {
+		font-size: 0.98rem;
+		line-height: 1.3;
+		font-weight: 700;
+		margin: 0.85rem 1rem 0;
+		padding: 0;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-title::before {
+		display: none;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-title a {
+		color: var(--text);
+		text-decoration: none;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-title a:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-date {
+		font-size: 0.74rem;
+		color: var(--text-muted, #6b7280);
+		margin: 0.4rem 1rem 0;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-excerpt {
+		color: var(--text-dim, #a1a7b0);
+		font-size: 0.85rem;
+		line-height: 1.45;
+		margin: 0.5rem 1rem 1rem;
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-post-excerpt p {
+		margin: 0;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-query-pagination {
+		display: flex;
+		justify-content: center;
+		gap: 0.5rem;
+		margin: 1.5rem 0 0;
+		flex-wrap: wrap;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-query-pagination a,
+	.post-body .wp-block-query.staticq-query .wp-block-query-pagination .page-numbers {
+		font-size: 0.85rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text);
+		background: transparent;
+		border: 1px solid var(--border, #272c33);
+		border-radius: 999px;
+		padding: 0.5rem 1rem;
+		text-decoration: none;
+		transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+	}
+
+	.post-body .wp-block-query.staticq-query .wp-block-query-pagination a:hover,
+	.post-body .wp-block-query.staticq-query .wp-block-query-pagination .page-numbers.current {
+		background: var(--accent, #e63946);
+		border-color: var(--accent, #e63946);
+		color: #fff;
+	}
+
+	.post-body h2.staticq-query__title {
+		text-align: center;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+	}
+
+	.post-body h2.staticq-query__title::before {
+		display: none;
+	}
+
+	.post-body p.staticq-query__subtitle {
+		text-align: center;
+		color: var(--text-dim, #a1a7b0);
+		max-width: 60ch;
+		margin-left: auto;
+		margin-right: auto;
+	}
+
+	/* wpDataTables N/A cells (URLs/images that the source data left
+	 * blank). preparePostBody replaces the broken-link <a href="N/A">
+	 * and <img src="N/A"> elements with this span so the row reads as
+	 * "no data" instead of as a broken button or missing image. */
+	.post-body .wpdt-na {
+		display: inline-block;
+		font-size: 0.85em;
+		color: var(--text-muted, #6b7280);
+		font-style: italic;
+		opacity: 0.7;
+	}
+
+	/* wpDataTables filter inputs — text input replacement for the
+	 * empty Bootstrap-select slots the wpDT bundle was supposed to
+	 * populate. Filters the rendered rows by substring match. */
+	.post-body .staticq-wpdt-filter {
+		display: block;
+		width: 100%;
+		padding: 0.45rem 0.7rem;
+		font-size: 0.9rem;
+		font-family: inherit;
+		color: var(--text);
+		background: var(--bg, #0f1216);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 4px;
+		outline: none;
+		transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	}
+
+	.post-body .staticq-wpdt-filter:focus {
+		border-color: var(--accent, #e63946);
+		box-shadow: 0 0 0 2px rgba(230, 57, 70, 0.18);
+	}
+
+	.post-body .staticq-wpdt-filter::placeholder {
+		color: var(--text-muted, #6b7280);
+	}
+
+	.post-body .wpDataTableFilterBox {
+		display: grid;
+		gap: 0.75rem 1rem;
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+		margin: 1rem 0 1.25rem;
+	}
+
+	.post-body .wpDataTableFilterSection label {
+		display: block;
+		font-size: 0.78rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-dim, #a1a7b0);
+		margin-bottom: 0.35rem;
+	}
+
+	/* --- staticq/cta — server-side rendered WP block emitted by the
+	 * migration as a replacement for Tipi CTA cards (preview 45).
+	 * The block's render_callback in the mu-plugin produces the
+	 * `<section class="staticq-cta">` markup; we just style it. CSS
+	 * mirrors what the mu-plugin's wp_head injection puts on www, so
+	 * both surfaces look identical.
+	 * --- */
+	.post-body .staticq-cta {
+		max-width: 1180px;
+		margin: 2rem auto;
+		padding: 1.25rem 1.5rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+		align-items: stretch;
+		justify-content: space-between;
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 6px;
+		position: relative;
+		isolation: isolate;
+	}
+
+	@media (min-width: 700px) {
+		.post-body .staticq-cta {
+			flex-direction: row;
+			align-items: center;
+			padding: 1.5rem 2rem;
+		}
+	}
+
+	.post-body .staticq-cta::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: var(--staticq-cta-overlay, transparent);
+		border-radius: 6px;
+		z-index: -1;
+		pointer-events: none;
+	}
+
+	.post-body .staticq-cta--skinned {
+		background: var(--staticq-cta-skin);
+		border-color: transparent;
+		color: #fff;
+	}
+
+	.post-body .staticq-cta__text {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.post-body .staticq-cta__pretitle {
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--accent, #e63946);
+		margin-bottom: 0.25rem;
+	}
+
+	.post-body .staticq-cta__pretitle p { margin: 0; }
+
+	.post-body .staticq-cta__title {
+		font-size: clamp(1.1rem, 1.6vw, 1.4rem);
+		font-weight: 800;
+		line-height: 1.2;
+		color: var(--text);
+		margin: 0;
+	}
+
+	.post-body .staticq-cta__title :is(h1, h2, h3, h4, p) {
+		margin: 0;
+		font-size: inherit;
+		font-weight: inherit;
+		color: inherit;
+	}
+
+	.post-body .staticq-cta__title :is(h2, h3, h4)::before {
+		display: none;
+	}
+
+	.post-body .staticq-cta--skinned .staticq-cta__title {
+		color: #fff;
+	}
+
+	.post-body .staticq-cta__subtitle {
+		margin-top: 0.35rem;
+		color: var(--text-dim, #a1a7b0);
+		font-size: 0.9rem;
+		line-height: 1.5;
+	}
+
+	.post-body .staticq-cta__subtitle p { margin: 0; }
+
+	.post-body .staticq-cta--skinned .staticq-cta__subtitle {
+		color: #fff;
+		opacity: 0.92;
+	}
+
+	.post-body .staticq-cta__button-wrap {
+		flex-shrink: 0;
+	}
+
+	.post-body .staticq-cta__button {
+		display: inline-block;
+		padding: 0.65rem 1.5rem;
+		font-size: 0.82rem;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		background: var(--staticq-cta-btn-bg, var(--accent, #e63946));
+		color: #fff;
+		text-decoration: none;
+		border-radius: 999px;
+		transition: filter 0.15s ease, transform 0.15s ease;
+	}
+
+	.post-body .staticq-cta__button:hover {
+		filter: brightness(1.1);
+		transform: translateY(-1px);
+	}
+
+	/* --- Mailchimp for WP signup form (mc4wp shortcode) ---
+	 * The migration emits [mc4wp_form] for Tipi block type 32. The
+	 * plugin renders a raw <form> with an email input + submit button
+	 * but ships no CSS. Style it as a centered horizontal "subscribe"
+	 * card matching the site's accent palette. Functional submission
+	 * is a separate (future) WP-side concern — for now this is
+	 * decoration only. */
+	.post-body .mc4wp-form {
+		max-width: 520px;
+		margin: 2.5rem auto;
+		padding: 1.5rem 1.5rem 1.25rem;
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 6px;
+	}
+
+	.post-body .mc4wp-form-fields {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: stretch;
+	}
+
+	.post-body .mc4wp-form-fields > p {
+		margin: 0;
+		flex: 1 1 200px;
+		display: flex;
+	}
+
+	.post-body .mc4wp-form-fields > p:has(input[type="submit"]) {
+		flex: 0 0 auto;
+	}
+
+	.post-body .mc4wp-form-fields label {
+		flex: 1;
+		display: flex;
+	}
+
+	.post-body .mc4wp-form-fields input[type="email"] {
+		flex: 1;
+		min-width: 0;
+		width: 100%;
+		padding: 0.7rem 1rem;
+		font-size: 0.95rem;
+		color: var(--text);
+		background: var(--bg, #0f1216);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 999px;
+		outline: none;
+		transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	}
+
+	.post-body .mc4wp-form-fields input[type="email"]:focus {
+		border-color: var(--accent, #e63946);
+		box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.18);
+	}
+
+	.post-body .mc4wp-form-fields input[type="email"]::placeholder {
+		color: var(--text-muted, #6b7280);
+	}
+
+	.post-body .mc4wp-form-fields input[type="submit"] {
+		font-family: inherit;
+		font-size: 0.85rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: #fff;
+		background: var(--accent, #e63946);
+		border: none;
+		border-radius: 999px;
+		padding: 0.7rem 1.6rem;
+		cursor: pointer;
+		transition: filter 0.15s ease, transform 0.15s ease;
+	}
+
+	.post-body .mc4wp-form-fields input[type="submit"]:hover {
+		filter: brightness(1.1);
+		transform: translateY(-1px);
+	}
+
+	.post-body .mc4wp-form-fields input[type="submit"]:focus-visible {
+		outline: 2px solid var(--accent, #e63946);
+		outline-offset: 2px;
+	}
+
+	.post-body .mc4wp-response {
+		margin-top: 0.75rem;
+		font-size: 0.85rem;
+		color: var(--text-dim, #a1a7b0);
+		text-align: center;
+	}
+
+	.post-body .mc4wp-response:empty {
+		display: none;
+	}
+
+	/* --- quote: subtle left-rule callout with optional citation --- */
+	.post-body .wp-block-quote {
+		margin: 2rem 0;
+		padding: 1rem 0 1rem 1.25rem;
+		border-left: 3px solid var(--accent);
+		font-style: italic;
+	}
+
+	.post-body .wp-block-quote cite {
+		display: block;
+		margin-top: 0.5rem;
+		font-size: 0.9rem;
+		color: var(--text-dim);
+		font-style: normal;
+	}
+</style>

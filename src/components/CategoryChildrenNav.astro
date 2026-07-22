@@ -1,0 +1,112 @@
+---
+// Sub-category navigation for PARENT categories. Renders a horizontal
+// chip-list of links to each direct child category, with the child's
+// post count (descendants included since WP returns roll-up counts).
+//
+// Replaces the hero strip on parent pages — on a parent like
+// `/category/models/diablo/`, the user wants to drill into a specific
+// sub-model (Diablo VT, Diablo SV, etc.) rather than see a single
+// hero. The chip list makes that one click.
+//
+// No JS — plain anchors. Wraps naturally on narrow screens. For
+// parents with very many children (rare), the list just wraps; we can
+// add a "show more" toggle later if a real case needs it.
+
+import type { WPCategory } from '../lib/wp';
+
+interface Props {
+	children: WPCategory[];
+	parentName: string;
+}
+
+const { children, parentName } = Astro.props;
+---
+
+{children.length > 0 && (
+	<nav class="cat-children" aria-label={`Sub-categories of ${parentName}`}>
+		<div class="cat-children__heading">Browse by sub-category</div>
+		<ul class="cat-children__list">
+			{children.map((child) => (
+				<li>
+					<a class="cat-children__chip" href={`/category/${child.slug}/`}>
+						<span class="cat-children__name">{child.name}</span>
+						{child.count > 0 && (
+							<span class="cat-children__count">{child.count}</span>
+						)}
+					</a>
+				</li>
+			))}
+		</ul>
+	</nav>
+)}
+
+<style>
+	.cat-children {
+		margin: 0 0 2rem;
+	}
+
+	.cat-children__heading {
+		font-size: 0.75rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--text-dim, #a1a7b0);
+		margin-bottom: 0.75rem;
+	}
+
+	.cat-children__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+
+	.cat-children__list > li {
+		margin: 0;
+	}
+
+	.cat-children__chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		padding: 0.45rem 0.85rem;
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 999px;
+		color: var(--text);
+		text-decoration: none;
+		font-size: 0.88rem;
+		font-weight: 600;
+		line-height: 1.2;
+		transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+	}
+
+	.cat-children__chip:hover,
+	.cat-children__chip:focus-visible {
+		background: var(--accent, #e63946);
+		border-color: var(--accent, #e63946);
+		color: #fff;
+		outline: none;
+	}
+
+	.cat-children__name {
+		white-space: nowrap;
+	}
+
+	.cat-children__count {
+		font-size: 0.72rem;
+		font-weight: 700;
+		opacity: 0.7;
+		padding: 0.1rem 0.45rem;
+		background: rgba(255, 255, 255, 0.08);
+		border-radius: 999px;
+	}
+
+	.cat-children__chip:hover .cat-children__count,
+	.cat-children__chip:focus-visible .cat-children__count {
+		background: rgba(255, 255, 255, 0.2);
+		opacity: 1;
+	}
+</style>

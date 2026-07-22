@@ -1,0 +1,210 @@
+---
+import Base from '../layouts/Base.astro';
+import OverlayCard from '../components/OverlayCard.astro';
+import { searchPosts } from '../lib/wp';
+import { SITE_TITLE } from '../lib/site';
+
+// Search results page. WordPress's default search permalink at
+// `/?s=...` (preserved for inbound links/bookmarks) redirects here
+// via index.astro. Reads the query from `?s=` and shows up to 20
+// matches in the same card grid used by tag/category archives.
+//
+// No pagination — search is a "find what I want" UX, not a browse,
+// and the long tail of low-relevance hits past page 1 adds little.
+// If the user wants more, they refine the query.
+//
+// The middleware skips edge/R2 caching for any path under /search/,
+// so each query gets a fresh SSR call to WP — otherwise the first
+// `?s=foo` would be cached and every subsequent `?s=bar` would
+// return the foo results.
+//
+// Backing search: `searchPosts` (lib/wp.ts) hits WordPress core search
+// via `GET /wp/v2/posts?search=<q>` — a LIKE match on post title/content,
+// default relevance, POSTS ONLY (no pages/CPTs), capped at 20, no typo
+// tolerance or taxonomy/meta search. Each query is a live, uncached
+// round-trip to WP, so search latency tracks your origin.
+//
+// Upgrade paths for a real site (all swap in at `searchPosts`):
+//   - Better relevance on WP: install Relevanssi and point searchPosts at
+//     its REST endpoint instead of /wp/v2/posts.
+//   - External index: Algolia / Typesense / Meilisearch — fast, typo-
+//     tolerant, faceted; query the index here instead of WP.
+//   - Static/client-side: Pagefind builds an index at deploy time and
+//     searches in the browser (no per-query origin hit).
+//   - Broaden scope: add `post_type` params, or add pagination if you
+//     want more than the first 20 matches.
+
+const raw = Astro.url.searchParams.get('s') ?? '';
+const query = raw.trim();
+
+let posts: Awaited<ReturnType<typeof searchPosts>>['posts'] = [];
+let total = 0;
+if (query) {
+	const r = await searchPosts(query, 20);
+	posts = r.posts;
+	total = r.total;
+}
+
+const title = query ? `Search: ${query}` : 'Search';
+const description = query
+	? `Results for "${query}" on ${SITE_TITLE}`
+	: `Search the ${SITE_TITLE} archive`;
+const countLabel = !query
+	? ''
+	: total === 0
+		? 'No matches'
+		: total === 1
+			? '1 match'
+			: total > 20
+				? `Showing 20 of ${total} matches`
+				: `${total} matches`;
+---
+
+<Base title={title} description={description} noIndex skipSeoHead>
+	<section class="search-hero">
+		<div class="search-hero__label">Search</div>
+		<h1 class="search-hero__title">
+			{query ? `“${query}”` : 'What are you looking for?'}
+		</h1>
+		<form class="search-form" method="get" action="/search/">
+			<label class="search-form__label" for="search-input">Search</label>
+			<input
+				id="search-input"
+				class="search-form__input"
+				type="search"
+				name="s"
+				value={query}
+				placeholder="Search posts…"
+				autocomplete="off"
+				autocapitalize="off"
+				spellcheck="false"
+			/>
+			<button class="search-form__btn" type="submit">Go</button>
+		</form>
+		{countLabel && <div class="search-hero__count">{countLabel}</div>}
+	</section>
+
+	{query && posts.length === 0 ? (
+		<p class="search-empty">
+			No posts matched <strong>“{query}”</strong>. Try a shorter or different term.
+		</p>
+	) : posts.length > 0 ? (
+		<div class="search-grid">
+			{posts.map((post) => (
+				<OverlayCard post={post} size="md" />
+			))}
+		</div>
+	) : null}
+</Base>
+
+<style>
+	.search-hero {
+		max-width: 760px;
+		margin: 2rem auto 1.5rem;
+		padding: 0 1rem;
+	}
+
+	.search-hero__label {
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--text-dim, #a1a7b0);
+		margin-bottom: 0.5rem;
+	}
+
+	.search-hero__title {
+		font-size: clamp(1.6rem, 3vw, 2.2rem);
+		font-weight: 900;
+		line-height: 1.15;
+		margin: 0 0 1rem;
+	}
+
+	.search-form {
+		display: flex;
+		gap: 0.5rem;
+		align-items: stretch;
+		margin-bottom: 0.75rem;
+	}
+
+	.search-form__label {
+		position: absolute;
+		left: -9999px;
+	}
+
+	.search-form__input {
+		flex: 1;
+		min-width: 0;
+		appearance: none;
+		font: inherit;
+		font-size: 1rem;
+		color: var(--text);
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 6px;
+		padding: 0.65rem 0.85rem;
+	}
+
+	.search-form__input:focus {
+		outline: none;
+		border-color: var(--accent, #e63946);
+		background: var(--bg-elev-2, #1a1d22);
+	}
+
+	.search-form__btn {
+		appearance: none;
+		font: inherit;
+		font-size: 0.85rem;
+		font-weight: 800;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: #fff;
+		background: var(--accent, #e63946);
+		border: 1px solid var(--accent, #e63946);
+		border-radius: 6px;
+		padding: 0 1.2rem;
+		cursor: pointer;
+	}
+
+	.search-form__btn:hover,
+	.search-form__btn:focus-visible {
+		background: var(--accent-hot, #ff5864);
+		border-color: var(--accent-hot, #ff5864);
+		outline: none;
+	}
+
+	.search-hero__count {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.search-empty {
+		max-width: 760px;
+		margin: 2rem auto;
+		padding: 0 1rem;
+		color: var(--text-dim, #a1a7b0);
+	}
+
+	.search-empty strong {
+		color: var(--text);
+	}
+
+	.search-grid {
+		display: grid;
+		gap: 1.25rem;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+		margin: 0 1rem 2.5rem;
+	}
+
+	@media (min-width: 1100px) {
+		.search-grid {
+			grid-template-columns: repeat(4, 1fr);
+			margin: 0 auto 2.5rem;
+			max-width: 1180px;
+			padding: 0 1rem;
+		}
+	}
+</style>

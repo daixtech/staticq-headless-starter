@@ -1,0 +1,230 @@
+---
+// Post card with image-on-top + content-below layout, leaving room for
+// the subtitle line that overlay-style cards can't fit cleanly.
+//
+// Used by the /category/ archive grid. OverlayCard remains the choice
+// for places where the image-overlay treatment is the right call
+// (homepage hero, search, etc.).
+//
+// Subtitle support: reads `post.subtitle` (a string), renders when
+// non-empty. The plugin sources it from a filterable postmeta key
+// (src/Post/Subtitle.php); posts without one simply omit the line.
+
+import type { WPPost } from '../lib/wp';
+import {
+	formatDate,
+	getPrimaryCategory,
+	getResponsiveImage,
+} from '../lib/wp';
+import ResponsiveImage from './ResponsiveImage.astro';
+
+interface Props {
+	post: WPPost;
+	size?: 'sm' | 'md' | 'lg';
+	kickerOverride?: { name: string; slug: string } | null;
+	kickerLabel?: string | null;
+	hideKicker?: boolean;
+	showDate?: boolean;
+}
+
+const {
+	post,
+	size = 'md',
+	kickerOverride = null,
+	kickerLabel = null,
+	hideKicker = false,
+	showDate = true,
+} = Astro.props;
+
+const preferredSize = size === 'lg' ? 'large' : 'medium_large';
+const image = getResponsiveImage(post, preferredSize);
+const sizesAttr =
+	size === 'lg'
+		? '(max-width: 1000px) 100vw, 65vw'
+		: '(max-width: 600px) 100vw, (max-width: 1100px) 50vw, 33vw';
+
+const primary = getPrimaryCategory(post);
+const kicker: { name: string; slug: string } | null = hideKicker
+	? null
+	: kickerOverride
+		? kickerOverride
+		: primary
+			? { name: primary.name, slug: primary.slug }
+			: null;
+
+const href = `/${post.slug}/`;
+
+// Subtitle — surfaced by the staticq-headless plugin's REST field on
+// `post.subtitle` (deprecated alias: `post.zeen_subtitle`). Renders the
+// second line below the title when present, hidden otherwise. Same
+// wiring as OverlayCard.
+const rawSubtitle = post.subtitle ?? post.zeen_subtitle;
+const subtitle = typeof rawSubtitle === 'string' ? rawSubtitle.trim() : '';
+---
+
+<article class={`scard scard--${size}`}>
+	<a href={href} class="scard__media" aria-hidden="true" tabindex="-1">
+		{image ? (
+			<ResponsiveImage image={image} sizes={sizesAttr} loading="lazy" />
+		) : (
+			<span class="scard__placeholder">no image</span>
+		)}
+	</a>
+	<div class="scard__body">
+		{kickerLabel ? (
+			<span class="scard__kicker scard__kicker--label">{kickerLabel}</span>
+		) : kicker && (
+			<a href={`/category/${kicker.slug}/`} class="scard__kicker">
+				{kicker.name}
+			</a>
+		)}
+		<h3 class="scard__title">
+			<a href={href} class="scard__title-link" set:html={post.title.rendered} />
+		</h3>
+		{subtitle && (
+			<p class="scard__subtitle" set:html={subtitle} />
+		)}
+		{showDate && (
+			<div class="scard__meta">{formatDate(post.date)}</div>
+		)}
+	</div>
+</article>
+
+<style>
+	.scard {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: var(--radius, 4px);
+		overflow: hidden;
+		transition: transform 0.2s ease, box-shadow 0.2s ease;
+	}
+
+	.scard:hover {
+		transform: translateY(-2px);
+		box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+	}
+
+	.scard__media {
+		display: block;
+		position: relative;
+		width: 100%;
+		aspect-ratio: 16 / 10;
+		overflow: hidden;
+		background: var(--bg-elev-2, #1a1d22);
+	}
+
+	.scard--sm .scard__media { aspect-ratio: 4 / 3; }
+	.scard--lg .scard__media { aspect-ratio: 16 / 9; }
+
+	.scard__media :global(img) {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+		transition: transform 400ms ease;
+	}
+
+	.scard:hover .scard__media :global(img) {
+		transform: scale(1.04);
+	}
+
+	.scard__placeholder {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--text-muted, #6b7280);
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+	}
+
+	.scard__body {
+		padding: 0.85rem 1rem 1rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		flex: 1;
+	}
+
+	.scard__kicker {
+		display: inline-block;
+		align-self: flex-start;
+		color: var(--accent, #e63946);
+		font-size: 0.7rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		text-decoration: none;
+	}
+
+	.scard__kicker:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.scard__title {
+		font-size: 1.02rem;
+		line-height: 1.3;
+		font-weight: 800;
+		letter-spacing: -0.005em;
+		margin: 0;
+		color: var(--text);
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.scard--lg .scard__title {
+		font-size: clamp(1.2rem, 2vw, 1.5rem);
+		-webkit-line-clamp: 3;
+	}
+
+	.scard--sm .scard__title {
+		font-size: 0.92rem;
+		-webkit-line-clamp: 3;
+	}
+
+	.scard__title-link {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.scard__title-link:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	/* Subtitle line. Optional, renders only when post.subtitle is
+	 * present. Clamps to 2 lines so very long subtitles don't push
+	 * the card height around. */
+	.scard__subtitle {
+		font-size: 0.85rem;
+		line-height: 1.45;
+		color: var(--text-dim, #a1a7b0);
+		margin: 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.scard--lg .scard__subtitle {
+		font-size: 0.95rem;
+		-webkit-line-clamp: 3;
+	}
+
+	.scard--sm .scard__subtitle {
+		font-size: 0.8rem;
+		-webkit-line-clamp: 2;
+	}
+
+	.scard__meta {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.75rem;
+		margin-top: auto; /* push to the bottom of the card */
+		padding-top: 0.25rem;
+	}
+</style>

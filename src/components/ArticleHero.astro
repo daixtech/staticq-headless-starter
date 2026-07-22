@@ -1,0 +1,221 @@
+---
+import type { WPPost, WPEmbeddedTerm } from '../lib/wp';
+import type { BreadcrumbItem } from '../lib/breadcrumb';
+import { getResponsiveImage } from '../lib/wp';
+import ResponsiveImage from './ResponsiveImage.astro';
+import Breadcrumb from './Breadcrumb.astro';
+
+interface Props {
+	post: WPPost;
+	category: WPEmbeddedTerm | null;
+	// Full breadcrumb chain (Home → ... → primary category). When
+	// passed, the hero renders this via the shared Breadcrumb component.
+	// When omitted, falls back to the legacy 2-item nav (Home > category)
+	// — kept so any caller not yet on the new pipeline still works.
+	breadcrumbItems?: BreadcrumbItem[];
+}
+
+const { post, category, breadcrumbItems } = Astro.props;
+
+// Prefer the largest available variant; the browser still picks from srcset
+// for its actual rendered width, but the <img> src fallback uses this one.
+const image = getResponsiveImage(post, 'full') ?? getResponsiveImage(post, 'large');
+const hasImage = !!image;
+
+// Subtitle line under the H1. Neutral `post.subtitle` with the deprecated
+// `post.zeen_subtitle` alias as fallback. Empty → the line is omitted.
+const rawSubtitle = post.subtitle ?? post.zeen_subtitle;
+const subtitle = typeof rawSubtitle === 'string' ? rawSubtitle.trim() : '';
+---
+
+<section class={`ahero${hasImage ? '' : ' ahero--no-image'}`} aria-label="Article hero">
+	{hasImage && image && (
+		<div class="ahero__media">
+			<ResponsiveImage
+				image={image}
+				sizes="100vw"
+				loading="eager"
+				fetchpriority="high"
+			/>
+			<div class="ahero__shade"></div>
+		</div>
+	)}
+	<div class="ahero__top">
+		<div class="ahero__inner">
+			{breadcrumbItems && breadcrumbItems.length > 1 ? (
+				<Breadcrumb items={breadcrumbItems} variant="onDark" />
+			) : (
+				<nav class="ahero__crumbs" aria-label="Breadcrumb">
+					<a href="/">Home</a>
+					{category && (
+						<>
+							<span class="ahero__crumb-sep">/</span>
+							<a href={`/category/${category.slug}/`}>{category.name}</a>
+						</>
+					)}
+				</nav>
+			)}
+		</div>
+	</div>
+	<div class="ahero__bottom">
+		<div class="ahero__inner">
+			<div class="ahero__body">
+				{category && (
+					<div class="ahero__kicker">{category.name}</div>
+				)}
+				<h1 class="ahero__title" set:html={post.title.rendered} />
+				{subtitle && (
+					<p class="ahero__subtitle" set:html={subtitle} />
+				)}
+			</div>
+		</div>
+	</div>
+</section>
+
+<style>
+	/*
+	 * Full-bleed: break out of the .container that wraps the slot in
+	 * Base.astro so the hero spans the full viewport width.
+	 */
+	.ahero {
+		position: relative;
+		width: 100vw;
+		margin-left: calc(-50vw + 50%);
+		min-height: 70vh;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		overflow: hidden;
+		background: var(--bg-elev, #161a1f);
+		isolation: isolate;
+	}
+
+	.ahero--no-image {
+		min-height: 40vh;
+		justify-content: center;
+	}
+
+	.ahero__media {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+	}
+
+	/* Image fill / object-fit handled inside ResponsiveImage. */
+
+	.ahero__shade {
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			to top,
+			rgba(0, 0, 0, 0.92) 0%,
+			rgba(0, 0, 0, 0.7) 25%,
+			rgba(0, 0, 0, 0.35) 50%,
+			rgba(0, 0, 0, 0.05) 80%,
+			transparent 100%
+		);
+		pointer-events: none;
+	}
+
+	.ahero__top {
+		position: relative;
+		z-index: 1;
+		padding-top: 1.25rem;
+		color: #fff;
+	}
+
+	.ahero__bottom {
+		position: relative;
+		z-index: 1;
+		padding-bottom: 2.5rem;
+		color: #fff;
+	}
+
+	.ahero__inner {
+		max-width: var(--container, 1280px);
+		margin: 0 auto;
+		padding: 0 var(--gutter, 1.5rem);
+	}
+
+	.ahero__crumbs {
+		font-size: 0.75rem;
+		text-transform: uppercase;
+		letter-spacing: 0.1em;
+		color: rgba(255, 255, 255, 0.85);
+		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+		display: flex;
+		gap: 0.5rem;
+		flex-wrap: wrap;
+	}
+
+	.ahero__crumbs a {
+		color: inherit;
+		text-decoration: none;
+	}
+
+	.ahero__crumbs a:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.ahero__crumb-sep {
+		opacity: 0.55;
+	}
+
+	.ahero__body {
+		max-width: 900px;
+	}
+
+	.ahero__kicker {
+		display: inline-block;
+		color: var(--accent, #e63946);
+		font-size: 0.75rem;
+		font-weight: 800;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		margin-bottom: 0.85rem;
+	}
+
+	.ahero__title {
+		font-size: clamp(1.85rem, 4vw, 3.4rem);
+		font-weight: 900;
+		line-height: 1.1;
+		letter-spacing: -0.015em;
+		margin: 0;
+		text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+	}
+
+	/* Subtitle line under the H1. Lighter weight, larger leading,
+	 * subdued vs the title so the hierarchy stays clear. Hidden when
+	 * the post has no subtitle (the parent guard checks for non-empty
+	 * string). */
+	.ahero__subtitle {
+		font-size: clamp(1rem, 1.5vw, 1.25rem);
+		font-weight: 400;
+		line-height: 1.4;
+		margin: 0.85rem 0 0;
+		color: rgba(255, 255, 255, 0.9);
+		text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+		max-width: 760px;
+	}
+
+	.ahero--no-image .ahero__body {
+		text-align: center;
+		margin: 0 auto;
+	}
+
+	.ahero--no-image .ahero__crumbs {
+		justify-content: center;
+	}
+
+	@media (max-width: 768px) {
+		.ahero {
+			min-height: 55vh;
+		}
+		.ahero__bottom {
+			padding-bottom: 1.75rem;
+		}
+		.ahero__title {
+			font-size: clamp(1.5rem, 7vw, 2.4rem);
+		}
+	}
+</style>

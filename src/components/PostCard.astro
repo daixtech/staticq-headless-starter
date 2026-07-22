@@ -1,0 +1,57 @@
+---
+import type { WPPost } from '../lib/wp';
+import {
+	formatDate,
+	getFeaturedImageAlt,
+	getFeaturedImageUrl,
+	getPrimaryCategory,
+} from '../lib/wp';
+
+interface Props {
+	post: WPPost;
+	size?: 'sm' | 'md' | 'lg';
+	showExcerpt?: boolean;
+	// Override the category kicker — used on category/tag archive pages so
+	// every card surfaces the archive's own term rather than each post's
+	// primary category, which is otherwise often a different (e.g. "Car
+	// Culture") category.
+	kickerOverride?: { name: string; slug: string } | null;
+}
+
+const {
+	post,
+	size = 'md',
+	showExcerpt = false,
+	kickerOverride = null,
+} = Astro.props;
+
+const image = getFeaturedImageUrl(post, size === 'lg' ? 'large' : 'medium_large');
+const alt = getFeaturedImageAlt(post);
+const primary = getPrimaryCategory(post);
+const category = kickerOverride ?? (primary ? { name: primary.name, slug: primary.slug } : null);
+const hasImage = !!image;
+---
+
+<article class={`card${hasImage ? '' : ' card--placeholder'}`}>
+	<a href={`/${post.slug}/`} class="card__media" aria-hidden="true" tabindex="-1">
+		{hasImage ? (
+			<img src={image} alt={alt} loading="lazy" />
+		) : (
+			<span>no image</span>
+		)}
+	</a>
+	<div>
+		{category && (
+			<div class="card__kicker">
+				<a href={`/category/${category.slug}/`}>{category.name}</a>
+			</div>
+		)}
+		<h3 class="card__title">
+			<a href={`/${post.slug}/`} set:html={post.title.rendered} />
+		</h3>
+		{showExcerpt && (
+			<div class="card__excerpt" set:html={post.excerpt.rendered} />
+		)}
+		<div class="card__meta">{formatDate(post.date)}</div>
+	</div>
+</article>

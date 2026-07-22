@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+ Default Open Graph / social-share image. 1200x630 — the dimensions most
+ social platforms expect. Facebook accepts SVG; Twitter and LinkedIn do
+ not. REPLACE THIS with your own branded 1200x630 JPG (or PNG) before
+ launch and keep the same filename so SITE_OG_IMAGE_DEFAULT stays pointed
+ at it (or point SITE_OG_IMAGE_DEFAULT at a different asset).
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+	<defs>
+		<linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#161a1f"/>
+			<stop offset="1" stop-color="#0f1114"/>
+		</linearGradient>
+		<linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+			<stop offset="0" stop-color="#e63946"/>
+			<stop offset="1" stop-color="#ff5864"/>
+		</linearGradient>
+	</defs>
+	<rect width="1200" height="630" fill="url(#bg)"/>
+	<rect x="80" y="296" width="40" height="38" fill="url(#bar)"/>
+	<text x="140" y="328" fill="#f3f4f6" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="84" letter-spacing="-2">MY <tspan fill="#e63946">SITE</tspan></text>
+	<text x="140" y="372" fill="#a1a7b0" font-family="Inter, system-ui, sans-serif" font-size="22" letter-spacing="3" text-transform="uppercase">A HEADLESS WORDPRESS SITE</text>
+</svg>

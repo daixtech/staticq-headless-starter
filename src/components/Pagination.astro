@@ -1,0 +1,113 @@
+---
+// Slot-stable pagination, displayed newest-first.
+//
+//   [Latest] [1] [2] [3] ... [S]
+//
+// where S = sealedCount. Display label K maps to URL /page/(S - K + 1)/, so
+// "Page 1" is the most-recent sealed cluster (just older than the live page)
+// and "Page S" is the oldest cluster. The underlying URLs never change once
+// written — only the display label does, so users see chronological numbering
+// while old links keep resolving.
+//
+// Arrows:
+//   ← Newer  moves left in the layout (toward Latest). Disabled on Latest.
+//   Older →  moves right (toward older clusters). Disabled on the oldest sealed.
+
+interface Props {
+	// `null` = currently rendering the live page; otherwise the URL page number (/page/N/).
+	current: number | null;
+	// Total sealed pages in this archive. 0 = live page is the only page.
+	sealedCount: number;
+	// Term root URL, must end in '/'. Sealed pages append `page/N/`.
+	baseUrl: string;
+	// How many numbered links to show on each side of current.
+	window?: number;
+}
+
+const { current, sealedCount, baseUrl, window = 2 } = Astro.props;
+const root = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+
+function urlForDisplay(d: number): string {
+	if (d === 0) return root;
+	return `${root}page/${sealedCount - d + 1}/`;
+}
+
+const liveUrl = root;
+const currentDisplay = current === null ? 0 : sealedCount - current + 1;
+
+let newerHref: string | undefined;
+let olderHref: string | undefined;
+if (currentDisplay > 0) {
+	newerHref = currentDisplay === 1 ? liveUrl : urlForDisplay(currentDisplay - 1);
+}
+if (currentDisplay < sealedCount) {
+	olderHref = urlForDisplay(currentDisplay + 1);
+}
+const hasNewer = !!newerHref;
+const hasOlder = !!olderHref;
+
+interface NumberItem { type: 'page'; display: number; isLive: boolean }
+interface GapItem { type: 'gap' }
+type Item = NumberItem | GapItem;
+
+const items: Item[] = [];
+if (sealedCount >= 1) {
+	items.push({ type: 'page', display: 0, isLive: true });
+
+	const center = currentDisplay === 0 ? 1 : currentDisplay;
+	const lo = Math.max(1, center - window);
+	const hi = Math.min(sealedCount, center + window);
+
+	if (lo > 1) {
+		items.push({ type: 'page', display: 1, isLive: false });
+		if (lo > 2) items.push({ type: 'gap' });
+	}
+	for (let d = lo; d <= hi; d++) {
+		items.push({ type: 'page', display: d, isLive: false });
+	}
+	if (hi < sealedCount) {
+		if (hi < sealedCount - 1) items.push({ type: 'gap' });
+		items.push({ type: 'page', display: sealedCount, isLive: false });
+	}
+}
+
+function entryLabel(item: NumberItem): string {
+	return item.isLive ? 'Latest' : String(item.display);
+}
+---
+
+{sealedCount >= 1 && (
+	<nav class="pagination" aria-label="Pagination">
+		<a
+			class={`pagination__nav${hasNewer ? '' : ' is-disabled'}`}
+			href={newerHref}
+			aria-disabled={!hasNewer}
+			rel="prev"
+		>
+			← Newer
+		</a>
+		<ol class="pagination__pages">
+			{items.map((item) => (
+				item.type === 'gap' ? (
+					<li class="pagination__gap" aria-hidden="true">…</li>
+				) : (
+					<li>
+						{item.display === currentDisplay ? (
+							<span class="pagination__page is-current" aria-current="page">{entryLabel(item)}</span>
+						) : (
+							<a class="pagination__page" href={urlForDisplay(item.display)}>{entryLabel(item)}</a>
+						)}
+					</li>
+				)
+			))}
+		</ol>
+		<a
+			class={`pagination__nav${hasOlder ? '' : ' is-disabled'}`}
+			href={olderHref}
+			aria-disabled={!hasOlder}
+			rel="next"
+		>
+			Older →
+		</a>
+	</nav>
+)}

@@ -1,0 +1,341 @@
+---
+import type { GalleryAttachment } from '../lib/wp';
+
+interface Props {
+	attachments: GalleryAttachment[];
+}
+
+const { attachments } = Astro.props;
+
+// Bail without rendering anything when there are no attachments — keeps
+// the markup off pages where the lightbox wouldn't fire anyway.
+const enabled = attachments.length > 0;
+---
+
+{enabled && (
+	<>
+		<script type="application/json" id="gallery-data" set:html={JSON.stringify(attachments)} />
+
+		<div class="sq-lightbox" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-label="Image gallery">
+			<button class="sq-lightbox__close" type="button" aria-label="Close gallery">×</button>
+			<button class="sq-lightbox__prev" type="button" aria-label="Previous image">‹</button>
+			<button class="sq-lightbox__next" type="button" aria-label="Next image">›</button>
+			<div class="sq-lightbox__counter" aria-live="polite"></div>
+			<div class="sq-lightbox__stage">
+				<img class="sq-lightbox__img" alt="" />
+			</div>
+			<a class="sq-lightbox__download" download target="_blank" rel="noopener">Download original</a>
+		</div>
+
+		<script is:inline>
+			(function () {
+				const dataEl = document.getElementById('gallery-data');
+				if (!dataEl) return;
+				let attachments;
+				try {
+					attachments = JSON.parse(dataEl.textContent || '[]');
+				} catch (_) { return; }
+				if (!Array.isArray(attachments) || attachments.length === 0) return;
+
+				// Build pathname → index map covering every registered size.
+				// Matching by PATHNAME (not full URL) because the body's
+				// <a href> values get host-stripped by rewriteWpLinks
+				// (→ `/wp-content/...`), while the attachment URLs in
+				// gallery_attachments stay absolute (→ `https://www...`).
+				// new URL(href, origin).pathname normalizes both into the
+				// same shape regardless of whether they had a host or not.
+				const pathToIndex = new Map();
+				function urlToPath(u) {
+					try { return new URL(u, location.origin).pathname; }
+					catch (_) { return u; }
+				}
+				attachments.forEach((att, i) => {
+					if (!att.sizes) return;
+					for (const sz of Object.values(att.sizes)) {
+						if (sz && typeof sz.url === 'string') {
+							pathToIndex.set(urlToPath(sz.url), i);
+						}
+					}
+				});
+
+				const lightbox = document.querySelector('.sq-lightbox');
+				if (!lightbox) return;
+				const img      = lightbox.querySelector('.sq-lightbox__img');
+				const counter  = lightbox.querySelector('.sq-lightbox__counter');
+				const download = lightbox.querySelector('.sq-lightbox__download');
+				const closeBtn = lightbox.querySelector('.sq-lightbox__close');
+				const prevBtn  = lightbox.querySelector('.sq-lightbox__prev');
+				const nextBtn  = lightbox.querySelector('.sq-lightbox__next');
+
+				let currentIndex = -1;
+
+				// Pick a viewable, non-master size for the modal display.
+				// Large is the sweet spot for full-screen viewing; fall
+				// through to medium_large, medium, then the master if
+				// nothing else is registered.
+				function pickDisplayUrl(att) {
+					const s = att.sizes || {};
+					return (s.large && s.large.url)
+						|| (s.medium_large && s.medium_large.url)
+						|| (s.medium && s.medium.url)
+						|| (s.full && s.full.url)
+						|| '';
+				}
+
+				// Download = the unscaled original when WP scaled the
+				// upload, otherwise the master file (which IS the
+				// original in that case).
+				function pickDownloadUrl(att) {
+					if (att.original_url) return att.original_url;
+					return (att.sizes && att.sizes.full && att.sizes.full.url) || '';
+				}
+
+				function show(index) {
+					if (index < 0 || index >= attachments.length) return;
+					currentIndex = index;
+					const att = attachments[index];
+					img.src = pickDisplayUrl(att);
+					img.alt = att.alt || '';
+					counter.textContent = (index + 1) + ' / ' + attachments.length;
+					download.href = pickDownloadUrl(att);
+					lightbox.hidden = false;
+					lightbox.setAttribute('aria-hidden', 'false');
+					document.body.style.overflow = 'hidden';
+				}
+
+				function close() {
+					lightbox.hidden = true;
+					lightbox.setAttribute('aria-hidden', 'true');
+					document.body.style.overflow = '';
+					currentIndex = -1;
+					// Drop the src so the image doesn't continue loading.
+					img.removeAttribute('src');
+				}
+
+				function next() { show((currentIndex + 1) % attachments.length); }
+				function prev() { show((currentIndex - 1 + attachments.length) % attachments.length); }
+
+				// Click delegation scoped to the post body. Two matchers:
+				//   1. Anchor whose href matches a known attachment URL
+				//      — covers Gutenberg image blocks set to "Link to
+				//      media file", classic [gallery] shortcode markup,
+				//      and any other markup that wraps an <img> in <a>.
+				//   2. Bare <img> whose currentSrc/src matches a known
+				//      attachment URL — covers regular post bodies where
+				//      Gutenberg image blocks were set to "Link to None"
+				//      (no surrounding anchor). The image src itself
+				//      points at one of the registered sizes; we match
+				//      against the full URL map by pathname.
+				// Scoping to .post-body keeps unrelated header/sidebar/
+				// footer images from triggering the modal.
+				const body = document.querySelector('.post-body');
+				if (body) {
+					// Always read the literal src attribute, never
+					// currentSrc. enhanceBodyImages() wraps body <img>
+					// tags in <picture> elements with a WebP <source>;
+					// browsers that pick the WebP variant set
+					// currentSrc to the .webp URL, which is NOT in
+					// pathToIndex (the attachment URLs are .jpg). The
+					// src ATTRIBUTE stays as the original .jpg
+					// regardless of which srcset variant the browser
+					// actually loaded.
+					function imgSrc(img) {
+						return img.getAttribute('src') || img.src || '';
+					}
+
+					// Mark images whose src is a known attachment URL so
+					// the cursor hint only shows on images that actually
+					// have a modal target. Runs once at script eval; new
+					// images dynamically injected after this won't be
+					// marked, but the click handler still resolves them.
+					for (const img of body.querySelectorAll('img')) {
+						const src = imgSrc(img);
+						if (src && pathToIndex.has(urlToPath(src))) {
+							img.setAttribute('data-sq-zoom', '1');
+						}
+					}
+
+					body.addEventListener('click', function (e) {
+						// First: anchor match (existing flow).
+						const a = e.target.closest('a');
+						if (a && a.href) {
+							const i = pathToIndex.get(urlToPath(a.href));
+							if (i !== undefined) {
+								e.preventDefault();
+								show(i);
+								return;
+							}
+						}
+						// Second: bare-image match (new flow for posts
+						// without per-image links).
+						const img = e.target.closest('img');
+						if (img) {
+							const src = imgSrc(img);
+							if (src) {
+								const i = pathToIndex.get(urlToPath(src));
+								if (i !== undefined) {
+									e.preventDefault();
+									show(i);
+									return;
+								}
+							}
+						}
+					});
+				}
+
+				closeBtn.addEventListener('click', close);
+				prevBtn.addEventListener('click', prev);
+				nextBtn.addEventListener('click', next);
+
+				// Click on the dim backdrop closes (but not on the image,
+				// nav buttons, or download button — those are interactive).
+				lightbox.addEventListener('click', function (e) {
+					if (e.target === lightbox) close();
+				});
+
+				document.addEventListener('keydown', function (e) {
+					if (lightbox.hidden) return;
+					if (e.key === 'Escape') close();
+					else if (e.key === 'ArrowLeft') prev();
+					else if (e.key === 'ArrowRight') next();
+				});
+			})();
+		</script>
+
+		<style is:global>
+			.sq-lightbox {
+				position: fixed;
+				inset: 0;
+				background: rgba(0, 0, 0, 0.92);
+				z-index: 9999;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 1rem;
+			}
+
+			.sq-lightbox[hidden] {
+				display: none;
+			}
+
+			.sq-lightbox__stage {
+				max-width: min(90vw, 1400px);
+				max-height: 85vh;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+			}
+
+			.sq-lightbox__img {
+				max-width: 100%;
+				max-height: 85vh;
+				object-fit: contain;
+				border-radius: 4px;
+				box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+			}
+
+			.sq-lightbox__close,
+			.sq-lightbox__prev,
+			.sq-lightbox__next {
+				position: absolute;
+				background: rgba(0, 0, 0, 0.55);
+				color: #fff;
+				border: 1px solid rgba(255, 255, 255, 0.2);
+				cursor: pointer;
+				line-height: 1;
+				font-family: inherit;
+				transition: background 0.15s ease, border-color 0.15s ease;
+			}
+
+			.sq-lightbox__close:hover,
+			.sq-lightbox__prev:hover,
+			.sq-lightbox__next:hover {
+				background: rgba(0, 0, 0, 0.85);
+				border-color: rgba(255, 255, 255, 0.5);
+			}
+
+			.sq-lightbox__close {
+				top: 1rem;
+				right: 1rem;
+				font-size: 1.6rem;
+				width: 2.4rem;
+				height: 2.4rem;
+				border-radius: 50%;
+			}
+
+			.sq-lightbox__prev,
+			.sq-lightbox__next {
+				top: 50%;
+				transform: translateY(-50%);
+				font-size: 2.4rem;
+				width: 3rem;
+				height: 3rem;
+				border-radius: 50%;
+			}
+
+			.sq-lightbox__prev { left: 1.25rem; }
+			.sq-lightbox__next { right: 1.25rem; }
+
+			.sq-lightbox__counter {
+				position: absolute;
+				top: 1.1rem;
+				left: 1.25rem;
+				color: rgba(255, 255, 255, 0.8);
+				font-size: 0.85rem;
+				font-weight: 600;
+				letter-spacing: 0.05em;
+				font-variant-numeric: tabular-nums;
+			}
+
+			.sq-lightbox__download {
+				position: absolute;
+				bottom: 1.25rem;
+				left: 50%;
+				transform: translateX(-50%);
+				background: rgba(0, 0, 0, 0.55);
+				color: #fff;
+				padding: 0.65rem 1.5rem;
+				text-decoration: none;
+				border: 1px solid rgba(255, 255, 255, 0.3);
+				border-radius: 999px;
+				font-size: 0.78rem;
+				font-weight: 700;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				transition: background 0.15s ease, border-color 0.15s ease;
+			}
+
+			.sq-lightbox__download:hover {
+				background: rgba(0, 0, 0, 0.85);
+				border-color: rgba(255, 255, 255, 0.6);
+				text-decoration: none;
+			}
+
+			/* Visual hint that gallery images are clickable. Anchored
+			 * images (gallery markup, Link-to-media-file blocks): mark
+			 * the surrounding anchor. Bare images (Link-to-None blocks
+			 * in regular posts): the lightbox JS marks them with
+			 * data-sq-zoom on script eval. */
+			.post-body .sq-gallery__item a,
+			.post-body .gallery a,
+			.post-body figure.wp-block-image > a {
+				display: block;
+				cursor: zoom-in;
+			}
+			.post-body img[data-sq-zoom='1'] {
+				cursor: zoom-in;
+			}
+
+			@media (max-width: 600px) {
+				.sq-lightbox__prev,
+				.sq-lightbox__next {
+					width: 2.4rem;
+					height: 2.4rem;
+					font-size: 1.8rem;
+				}
+				.sq-lightbox__prev { left: 0.5rem; }
+				.sq-lightbox__next { right: 0.5rem; }
+			}
+		</style>
+	</>
+)}

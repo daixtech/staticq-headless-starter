@@ -1,0 +1,78 @@
+---
+import type { SiteConfig, WPCategory } from '../lib/wp';
+import { SITE_TITLE, SITE_DESCRIPTION } from '../lib/site';
+
+interface Props {
+	categories?: WPCategory[];
+	siteConfig?: SiteConfig | null;
+}
+
+const { categories = [], siteConfig } = Astro.props;
+
+const year = new Date().getFullYear();
+const brandName = siteConfig?.brand.name ?? SITE_TITLE;
+const tagline =
+	siteConfig?.footer?.tagline ??
+	siteConfig?.brand.description ??
+	SITE_DESCRIPTION;
+const copyright =
+	siteConfig?.footer?.copyright ?? `© ${year} ${brandName}`;
+const extraLinks = siteConfig?.footer?.links ?? [];
+
+// Footer utility links — EDIT for your site. Each maps to a WP page
+// rendered by [slug].astro. Left empty so a fresh install ships no broken
+// links; add your own (About, Contact, Privacy Policy, …). WP-side
+// siteConfig.footer.links are merged in separately via extraLinks.
+const aboutLinks: { href: string; label: string }[] = [
+	// { href: '/about/',          label: 'About' },
+	// { href: '/contact/',        label: 'Contact' },
+	// { href: '/privacy-policy/', label: 'Privacy Policy' },
+];
+---
+
+<footer class="site-footer">
+	<div class="container site-footer__cols">
+		<div class="site-footer__col">
+			<a href="/" class="site-footer__brand">{brandName}</a>
+			<p class="site-footer__tag">{tagline}</p>
+		</div>
+		{categories.length > 0 && (
+			<div class="site-footer__col">
+				<h4 class="site-footer__h">Topics</h4>
+				<ul>
+					{categories.slice(0, 6).map((cat) => (
+						<li><a href={`/category/${cat.slug}/`}>{cat.name}</a></li>
+					))}
+				</ul>
+			</div>
+		)}
+		{extraLinks.length > 0 && (
+			<div class="site-footer__col">
+				<h4 class="site-footer__h">More</h4>
+				<ul>
+					{extraLinks.map((link) => (
+						<li><a href={link.href}>{link.label}</a></li>
+					))}
+				</ul>
+			</div>
+		)}
+		<div class="site-footer__col">
+			<h4 class="site-footer__h">About</h4>
+			<ul>
+				{aboutLinks.map((link) => (
+					<li><a href={link.href}>{link.label}</a></li>
+				))}
+			</ul>
+		</div>
+		<div class="site-footer__col">
+			<h4 class="site-footer__h">Subscribe</h4>
+			<ul>
+				<li><a href="/rss.xml">RSS feed</a></li>
+			</ul>
+		</div>
+	</div>
+	<div class="container site-footer__bottom">
+		<span>{copyright}</span>
+		<span>Built with <a href="https://astro.build/">Astro</a></span>
+	</div>
+</footer>

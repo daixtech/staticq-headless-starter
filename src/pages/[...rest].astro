@@ -1,0 +1,149 @@
+---
+import Base from '../layouts/Base.astro';
+import ArticleBody from '../components/ArticleBody.astro';
+import PageBreadcrumb from '../components/PageBreadcrumb.astro';
+import {
+	WP_BASE_URL,
+	formatDate,
+	getPageBySlug,
+	getPagesSlim,
+	type WPPageSlim,
+} from '../lib/wp';
+import { preparePostBody } from '../lib/html';
+
+// Hierarchical WordPress pages. WP supports parent/child page trees, so
+// pages can have multi-segment permalinks like:
+//   /products-hub/                                ← top, handled by [slug].astro
+//   /products-hub/widget-x/          ← 2-deep, this route
+//   /docs/specs/dimensions/          ← 3-deep, this route
+//
+// Astro's existing `[slug].astro` only matches single-segment paths.
+// This catch-all picks up the deeper ones. Posts always have flat
+// permalinks in WP, so we only consider page lookups here.
+//
+// Route precedence: more-specific routes (/category/..., /tag/..., /author/...,
+// /page/[n].astro, /[slug].astro) all win over this catch-all. We only
+// see paths that didn't match anything else.
+
+const { rest } = Astro.params;
+const segments = (rest ?? '').split('/').filter((s) => s.length > 0);
+
+// Single-segment paths belong to /[slug].astro (which already tries
+// post then page). This route only fires for 2+ segments — bail out
+// for anything shallower so the two routes don't fight.
+if (segments.length < 2) {
+	return Astro.rewrite('/404');
+}
+
+// Resolve by the deepest segment (WP page slugs are unique site-wide,
+// so this resolves the page directly without needing the parent prefix).
+const slug = segments[segments.length - 1];
+const [page, allPages] = await Promise.all([
+	getPageBySlug(slug),
+	getPagesSlim().catch(() => [] as WPPageSlim[]),
+]);
+
+if (!page) {
+	return Astro.rewrite('/404');
+}
+
+// Walk the parent chain to validate the URL prefix and build the
+// canonical path + breadcrumb labels. Same defensive pattern as the
+// category catch-all: stop early if a parent is missing from the
+// cached pages list and skip the redirect in that case (better to
+// render at the requested URL than to redirect to a wrong-but-shorter
+// one).
+const byId = new Map<number, WPPageSlim>(allPages.map((p) => [p.id, p]));
+type ChainEntry = { slug: string; title: string };
+const chain: ChainEntry[] = [];
+let chainComplete = false;
+{
+	let cur: WPPageSlim | undefined = {
+		id: page.id,
+		slug: page.slug,
+		parent: page.parent,
+		link: page.link,
+		title: page.title,
+	};
+	const guard = new Set<number>();
+	while (cur && !guard.has(cur.id)) {
+		guard.add(cur.id);
+		chain.unshift({
+			slug: cur.slug,
+			title: cur.title?.rendered ?? cur.slug,
+		});
+		if (!cur.parent || cur.parent === 0) {
+			chainComplete = true;
+			break;
+		}
+		const parentPage = byId.get(cur.parent);
+		if (!parentPage) break;
+		cur = parentPage;
+	}
+}
+
+const canonicalBase = `/${chain.map((c) => c.slug).join('/')}/`;
+const incomingBase = `/${segments.join('/')}/`;
+if (chainComplete && canonicalBase !== incomingBase) {
+	return Astro.redirect(canonicalBase, 301);
+}
+
+// Build breadcrumb items: Home + every ancestor + current page. Each
+// crumb's href is the cumulative path up to that slug; the final
+// crumb's href isn't rendered as a link but stays present for the
+// component's JSON-LD shape sanity.
+const crumbs = [
+	{ name: 'Home', href: '/' },
+	...chain.map((c, i) => ({
+		name: c.title,
+		href: `/${chain.slice(0, i + 1).map((x) => x.slug).join('/')}/`,
+	})),
+];
+
+// Render the page body from the standard Gutenberg pipeline
+// (content.rendered → link/gallery rewrites, heading extraction).
+let preparedHtml = '';
+const rawBody = page.content?.rendered ?? '';
+if (rawBody) {
+	const prepared = preparePostBody(rawBody, WP_BASE_URL);
+	preparedHtml = prepared.html;
+}
+---
+
+<Base
+	title={page.title.rendered.replace(/<[^>]+>/g, '').trim()}
+	description={(page.excerpt?.rendered ?? '').replace(/<[^>]+>/g, '').trim().slice(0, 200) || undefined}
+>
+	<article class="wp-page">
+		<div class="wp-page__head">
+			<PageBreadcrumb crumbs={crumbs} />
+			<h1 class="wp-page__title" set:html={page.title.rendered} />
+			<div class="wp-page__meta">Updated {formatDate(page.modified)}</div>
+		</div>
+		<ArticleBody html={preparedHtml} />
+	</article>
+</Base>
+
+<style>
+	.wp-page {
+		max-width: 820px;
+		margin: 0 auto;
+		padding: 2rem 0 4rem;
+	}
+
+	.wp-page__title {
+		font-size: clamp(1.9rem, 3.6vw, 2.8rem);
+		font-weight: 900;
+		line-height: 1.1;
+		letter-spacing: -0.015em;
+		margin: 0 0 0.8rem;
+	}
+
+	.wp-page__meta {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.85rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border, #272c33);
+		margin-bottom: 2rem;
+	}
+</style>

@@ -1,0 +1,88 @@
+---
+import Base from '../../layouts/Base.astro';
+import OverlayCard from '../../components/OverlayCard.astro';
+import Pagination from '../../components/Pagination.astro';
+import { getHomeArchive, getHomeFallbackHeadIfThin, getTotalPostCount } from '../../lib/wp';
+
+// Sealed pages of the site-wide archive. The live (newest) view is the
+// curated home at `/` — these pages hold older posts in stable slots.
+//   /page/1/  → oldest 10 posts ever published, newest-first within the page
+//   /page/N/  → posts at chronological positions [(N-1)*10+1, N*10]
+const { n } = Astro.params;
+const pageNum = n ? Number(n) : NaN;
+if (!Number.isFinite(pageNum) || pageNum < 1) {
+	return Astro.rewrite('/404');
+}
+
+const { posts, layout, seoHead } = await getHomeArchive(pageNum);
+if (pageNum > layout.sealedPagesCount) {
+	return Astro.rewrite('/404');
+}
+
+// Rank Math returns a thin head for slot-stable `/page/N/` URLs (no
+// canonical, no description, JSON-LD WebPage with empty url). Mirror
+// the WP frontend's behaviour and serve the homepage's full head when
+// that happens — matches WP-live, which canonicals /page/N/ to /.
+const effectiveSeoHead = await getHomeFallbackHeadIfThin(seoHead);
+
+// The display number is the inverse of the URL slot (matches Pagination.astro's
+// label scheme). URL /page/S/ = display 1 (newest sealed); URL /page/1/ = display S.
+const displayNum = layout.sealedPagesCount - pageNum + 1;
+const totalPosts = await getTotalPostCount().catch(() => 0);
+---
+
+<Base
+	title={`Older posts — Page ${displayNum}`}
+	description={`Older articles, sealed page ${displayNum}.`}
+	seoHead={effectiveSeoHead}
+>
+	<section class="cat-hero">
+		<div class="cat-hero__label">Older · Page {displayNum}</div>
+		<h1 class="cat-hero__title">Older articles</h1>
+		<p class="cat-hero__desc">
+			Sealed slot from the site-wide archive — posts here keep the same URL
+			forever even as the archive grows.
+		</p>
+		{totalPosts > 0 && (
+			<div class="cat-hero__count">{totalPosts.toLocaleString()} articles total</div>
+		)}
+	</section>
+
+	{posts.length === 0 ? (
+		<p class="cat-empty">No posts in this slot.</p>
+	) : (
+		<div class="cat-grid">
+			{posts.map((post) => <OverlayCard post={post} size="md" />)}
+		</div>
+	)}
+
+	<Pagination current={pageNum} sealedCount={layout.sealedPagesCount} baseUrl="/" />
+</Base>
+
+<style>
+	.cat-hero__count {
+		margin-top: 0.65rem;
+		color: var(--text-muted, #6b7280);
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.cat-grid {
+		display: grid;
+		gap: 1.25rem;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	}
+
+	@media (min-width: 1100px) {
+		.cat-grid {
+			grid-template-columns: repeat(4, 1fr);
+		}
+	}
+
+	.cat-empty {
+		color: var(--text-dim, #a1a7b0);
+		margin: 2rem 0;
+	}
+</style>

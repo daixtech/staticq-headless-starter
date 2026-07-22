@@ -1,0 +1,132 @@
+---
+import type { WPPost } from '../lib/wp';
+import OverlayCard from './OverlayCard.astro';
+
+interface Props {
+	title: string;
+	posts: WPPost[];
+	seeAllHref?: string;
+	limit?: number;
+	// Card size used inside the strip's grid.
+	cardSize?: 'sm' | 'md';
+	// Optional flag rendered as top-right corner badge on each card.
+	flag?: string | null;
+	// Force the kicker on every card (used on category archives so all cards
+	// show the archive's own category instead of each post's primary one).
+	kickerOverride?: { name: string; slug: string } | null;
+	// Suppress the kicker on every card. Useful when the zone heading already
+	// names the category and a per-card kicker would be redundant.
+	hideKicker?: boolean;
+	// Grid density. Default 4 columns on wide screens, auto-fill below.
+	columns?: number;
+}
+
+const {
+	title,
+	posts,
+	seeAllHref,
+	limit,
+	cardSize = 'md',
+	flag = null,
+	kickerOverride = null,
+	hideKicker = false,
+	columns = 4,
+} = Astro.props;
+
+const items = typeof limit === 'number' ? posts.slice(0, limit) : posts;
+const minCard = cardSize === 'sm' ? 200 : 240;
+---
+
+{items.length > 0 && (
+	<section class="strip">
+		<header class="strip__head">
+			<h2 class="strip__title">{title}</h2>
+			{seeAllHref && (
+				<a class="strip__see-all" href={seeAllHref}>See all →</a>
+			)}
+		</header>
+		<div
+			class={`strip__grid strip__grid--cols-${columns}`}
+			style={`--strip-min-card:${minCard}px`}
+		>
+			{items.map((post) => (
+				<OverlayCard
+					post={post}
+					size={cardSize}
+					flag={flag}
+					kickerOverride={kickerOverride}
+					hideKicker={hideKicker}
+				/>
+			))}
+		</div>
+	</section>
+)}
+
+<style>
+	.strip {
+		margin: 2.75rem 0;
+	}
+
+	.strip__head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 1rem;
+		margin-bottom: 1rem;
+		padding-bottom: 0.65rem;
+		border-bottom: 1px solid var(--border, #272c33);
+	}
+
+	.strip__title {
+		font-size: 1.05rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-weight: 800;
+		margin: 0;
+		display: flex;
+		align-items: center;
+	}
+
+	.strip__title::before {
+		content: '';
+		display: inline-block;
+		width: 4px;
+		height: 1em;
+		background: var(--accent, #e63946);
+		margin-right: 0.55rem;
+	}
+
+	.strip__see-all {
+		color: var(--text-dim, #a1a7b0);
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		font-weight: 600;
+		text-decoration: none;
+	}
+
+	.strip__see-all:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.strip__grid {
+		display: grid;
+		gap: 1rem;
+		grid-template-columns: repeat(auto-fill, minmax(var(--strip-min-card, 240px), 1fr));
+	}
+
+	@media (min-width: 1100px) {
+		.strip__grid--cols-4 {
+			grid-template-columns: repeat(4, 1fr);
+		}
+		.strip__grid--cols-3 {
+			grid-template-columns: repeat(3, 1fr);
+		}
+		.strip__grid--cols-5 {
+			grid-template-columns: repeat(5, 1fr);
+		}
+		.strip__grid--cols-6 {
+			grid-template-columns: repeat(6, 1fr);
+		}
+	}
+</style>

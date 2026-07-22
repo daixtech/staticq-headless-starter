@@ -1,0 +1,116 @@
+---
+import Base from '../../../layouts/Base.astro';
+import StackedCard from '../../../components/StackedCard.astro';
+import Pagination from '../../../components/Pagination.astro';
+import Breadcrumb from '../../../components/Breadcrumb.astro';
+import {
+	getTagArchive,
+	getTagBySlug,
+} from '../../../lib/wp';
+import type { BreadcrumbItem } from '../../../lib/breadcrumb';
+
+// URL shape:
+//   /tag/foo/             → live page (newest 10..19)
+//   /tag/foo/page/N/      → sealed page N
+const { slug, page } = Astro.params;
+
+let pageNum: number | null = null;
+if (page !== undefined && page !== '') {
+	const match = page.match(/^page\/(\d+)\/?$/);
+	if (!match) {
+		return Astro.rewrite('/404');
+	}
+	pageNum = Number(match[1]);
+	if (!Number.isFinite(pageNum) || pageNum < 1) {
+		return Astro.rewrite('/404');
+	}
+}
+
+if (!slug) {
+	return Astro.rewrite('/404');
+}
+
+const tag = await getTagBySlug(slug);
+if (!tag) {
+	return Astro.rewrite('/404');
+}
+
+const { posts, layout, seoHead } = await getTagArchive(Number(tag.id), pageNum);
+
+if (pageNum !== null && pageNum > layout.sealedPagesCount) {
+	return Astro.rewrite('/404');
+}
+
+const baseUrl = `/tag/${tag.slug}/`;
+const isLive = pageNum === null;
+const titleSuffix = isLive ? '' : ` — Older posts (${pageNum})`;
+const labelSuffix = isLive ? '' : ` · Older (${pageNum})`;
+const countLabel = tag.count === 1 ? '1 article' : `${tag.count} articles`;
+
+// Breadcrumb chain — tags are flat (no parent hierarchy), so the
+// chain is simply Home > Tag name. Same JSON-LD shape categories use.
+const breadcrumbItems: BreadcrumbItem[] = [
+	{ name: 'Home', href: '/' },
+	{ name: tag.name, href: `/tag/${tag.slug}/` },
+];
+---
+
+<Base
+	title={`#${tag.name}${titleSuffix}`}
+	description={tag.description || `Posts tagged ${tag.name}`}
+	breadcrumb={breadcrumbItems}
+	seoHead={seoHead}
+>
+	<section class="cat-hero">
+		<Breadcrumb items={breadcrumbItems} />
+		<div class="cat-hero__label">Tag{labelSuffix}</div>
+		<h1 class="cat-hero__title">{tag.name}</h1>
+		{tag.description && (
+			<p class="cat-hero__desc">{tag.description}</p>
+		)}
+		<div class="cat-hero__count">{countLabel}</div>
+	</section>
+
+	{posts.length === 0 ? (
+		<p class="cat-empty">No posts with this tag yet.</p>
+	) : (
+		<div class="cat-grid">
+			{posts.map((post) => (
+				<StackedCard post={post} size="md" />
+			))}
+		</div>
+	)}
+
+	<Pagination current={pageNum} sealedCount={layout.sealedPagesCount} baseUrl={baseUrl} />
+</Base>
+
+<style>
+	.cat-hero__count {
+		margin-top: 0.65rem;
+		color: var(--text-muted, #6b7280);
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	/* Same grid sizing as /category/ archive — 3 columns at desktop,
+	 * minmax 320px for the auto-fill fallback so cards stay wide enough
+	 * to read the subtitle. */
+	.cat-grid {
+		display: grid;
+		gap: 1.5rem;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+	}
+
+	@media (min-width: 1100px) {
+		.cat-grid {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+
+	.cat-empty {
+		color: var(--text-dim, #a1a7b0);
+		margin: 2rem 0;
+	}
+</style>

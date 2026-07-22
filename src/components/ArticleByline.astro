@@ -1,0 +1,89 @@
+---
+import type { WPPost } from '../lib/wp';
+import { formatDate, readingTimeMinutes } from '../lib/wp';
+
+interface Props {
+	post: WPPost;
+}
+
+const { post } = Astro.props;
+
+const author = post._embedded?.author?.[0];
+const avatar =
+	author?.avatar_urls?.['96'] ??
+	author?.avatar_urls?.['48'] ??
+	author?.avatar_urls?.['24'] ??
+	null;
+const authorName = author?.name ?? null;
+const minutes = readingTimeMinutes(post.content?.rendered ?? '');
+---
+
+<aside class="byline">
+	{avatar && (
+		<img class="byline__avatar" src={avatar} alt={authorName ?? 'Author avatar'} loading="lazy" />
+	)}
+	<div class="byline__text">
+		<div class="byline__line">
+			{authorName && (
+				<>
+					<span class="byline__by">By</span>
+					<strong class="byline__name">{authorName}</strong>
+				</>
+			)}
+			<span class="byline__dot">·</span>
+			<time class="byline__date" datetime={post.date}>{formatDate(post.date)}</time>
+			<span class="byline__dot">·</span>
+			<span class="byline__rt">{minutes} min read</span>
+		</div>
+	</div>
+</aside>
+
+<style>
+	.byline {
+		display: flex;
+		align-items: center;
+		gap: 0.85rem;
+		padding: 1.25rem 0;
+		border-bottom: 1px solid var(--border, #272c33);
+		margin-bottom: 2rem;
+	}
+
+	.byline__avatar {
+		width: 44px;
+		height: 44px;
+		border-radius: 50%;
+		object-fit: cover;
+		flex-shrink: 0;
+	}
+
+	.byline__text {
+		min-width: 0;
+	}
+
+	.byline__line {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+		color: var(--text-dim, #a1a7b0);
+		font-size: 0.88rem;
+	}
+
+	.byline__by {
+		color: var(--text-muted, #6b7280);
+	}
+
+	.byline__name {
+		color: var(--text, #f3f4f6);
+		font-weight: 700;
+	}
+
+	.byline__dot {
+		color: var(--text-muted, #6b7280);
+	}
+
+	.byline__date,
+	.byline__rt {
+		color: var(--text-muted, #6b7280);
+	}
+</style>

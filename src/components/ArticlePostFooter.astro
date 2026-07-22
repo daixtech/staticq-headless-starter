@@ -1,0 +1,115 @@
+---
+// Tag-pill rail at the end of a single-post body.
+//
+// Matches the live `.post-tags.footer-block-links` block: a "Tags"
+// label followed by every post_tag the editor attached to the post,
+// each rendered as a pill linking to its tag-archive page.
+//
+// Categories are intentionally NOT shown here — the primary category
+// already appears in ArticleHero / ArticleByline, and live doesn't
+// surface them in this footer either.
+//
+// Terms come from the post's already-fetched `_embedded['wp:term']`
+// payload (getPostBySlug / getSingleBundle both pass `_embed=1`), so
+// no extra REST roundtrip per post.
+import type { WPPost } from '../lib/wp';
+import { WP_BASE_URL } from '../lib/wp';
+import { decodeEntities } from '../lib/text';
+
+interface Props {
+	post: WPPost;
+}
+
+const { post } = Astro.props;
+
+// _embedded['wp:term'] is a nested array — one inner array per taxonomy
+// the post belongs to. Flatten, keep only post_tag entries, and decode
+// HTML entities in the name (WP returns e.g. `Rock &amp; Roll`) since the
+// pills render it as plain text.
+const termGroups = post._embedded?.['wp:term'] ?? [];
+const tags = termGroups
+	.flat()
+	.filter((t) => t && t.taxonomy === 'post_tag' && typeof t.name === 'string' && t.name.length > 0)
+	.map((t) => ({ ...t, name: decodeEntities(t.name) }));
+
+// Rewrite the absolute WP tag-archive URL to a root-relative path so the
+// link stays on the headless host. Failing that (malformed URL), fall
+// back to building from the slug.
+function tagHref(link: string, slug: string): string {
+	if (link && WP_BASE_URL && link.startsWith(WP_BASE_URL)) {
+		return link.slice(WP_BASE_URL.length);
+	}
+	try {
+		return new URL(link).pathname;
+	} catch {
+		return slug ? `/tag/${slug}/` : '#';
+	}
+}
+---
+
+{tags.length > 0 && (
+	<aside class="post-tags" aria-label="Post tags">
+		<div class="post-tags__title">Tags</div>
+		<ul class="post-tags__list">
+			{tags.map((t) => (
+				<li>
+					<a class="post-tags__pill" href={tagHref(t.link, t.slug)} rel="tag">
+						{t.name}
+					</a>
+				</li>
+			))}
+		</ul>
+	</aside>
+)}
+
+<style>
+	.post-tags {
+		margin: 2rem 0 1rem;
+		padding: 1.25rem 0 0;
+		border-top: 1px solid var(--border, #272c33);
+	}
+
+	.post-tags__title {
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--text-dim, #a1a7b0);
+		margin-bottom: 0.65rem;
+	}
+
+	.post-tags__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem 0.5rem;
+	}
+
+	.post-tags__list > li {
+		margin: 0;
+	}
+
+	.post-tags__pill {
+		display: inline-block;
+		font-size: 0.78rem;
+		font-weight: 600;
+		line-height: 1.4;
+		color: var(--text);
+		background: var(--bg-elev, #161a1f);
+		border: 1px solid var(--border, #272c33);
+		border-radius: 999px;
+		padding: 0.32rem 0.85rem;
+		text-decoration: none;
+		transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+	}
+
+	.post-tags__pill:hover,
+	.post-tags__pill:focus-visible {
+		background: var(--accent, #e63946);
+		border-color: var(--accent, #e63946);
+		color: #fff;
+		outline: none;
+	}
+</style>

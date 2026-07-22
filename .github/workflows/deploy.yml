@@ -1,0 +1,131 @@
+name: Deploy headless frontend to Cloudflare Workers (production)
+
+# Production deploy pipeline for the StaticQ Astro starter.
+#
+# "git push is the deploy": a push to main OR a workflow_dispatch (the WP
+# admin's "Trigger fresh deploy" button / the AstroAuthoring assistant)
+# builds the site and deploys it to the production Worker.
+#
+# Binding & var preservation — the important part:
+#   The WP plugin owns the Worker's config. It pushes the R2/KV/etc.
+#   BINDINGS and the plain-text VARS (WP_BASE_URL, ...) + SECRETS to the
+#   live Worker via the Cloudflare API. The Astro adapter's generated
+#   wrangler.json contains NONE of that, so a naive deploy would wipe it.
+#   Two mechanisms keep it intact:
+#     - scripts/inject-live-bindings.mjs re-reads the live Worker's
+#       structural bindings from CF and writes them back into the
+#       generated wrangler.json before deploy.
+#     - `wrangler deploy --keep-vars` preserves the plain-text vars +
+#       secrets that aren't in the config.
+#   Together they mean a redeploy never strips the plugin's config.
+#
+# Required GitHub Secrets (Settings -> Secrets and variables -> Secrets):
+#   CLOUDFLARE_API_TOKEN   - Workers Scripts + R2 + Routes scope
+#   CLOUDFLARE_ACCOUNT_ID  - your CF account ID
+#   SITE_GATE_COOKIE       - optional visitor-gate cookie value
+#
+# Required GitHub Variables (Settings -> Secrets and variables -> Variables):
+#   WORKER_NAME            - the CF Worker name (managed by the WP plugin;
+#                            click "Push to GitHub Variables" in the wizard
+#                            to sync after changing it in WP)
+#   WP_BASE_URL            - your WP origin (e.g. https://www.example.com).
+#                            A build-time fallback only — the deployed
+#                            Worker reads WP_BASE_URL from its runtime
+#                            binding first (see src/lib/runtime-env.ts).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build_deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # `npm ci` requires a lock file. The bundled starter doesn't ship
+      # one — operators who want deterministic builds + caching should
+      # run `npm install` locally once and commit the generated
+      # package-lock.json. Until then, plain `npm install` works
+      # without a lock file (and the setup-node `cache: 'npm'` flag
+      # was removed because it ALSO requires the lock file).
+      - name: Install
+        run: |
+          if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      # import.meta.env values are inlined by Astro at build time, so any
+      # var the SSR code reads as a build-time fallback must be present
+      # here. Runtime bindings (pushed by the plugin) take precedence at
+      # request time regardless — this only feeds the fallback.
+      - name: Build
+        env:
+          WP_BASE_URL:      ${{ vars.WP_BASE_URL }}
+          SITE_GATE_COOKIE: ${{ secrets.SITE_GATE_COOKIE }}
+        run: npm run build
+
+      # Mirror the live Worker's structural bindings (R2/KV/...) into the
+      # generated wrangler.json so the deploy below re-applies rather than
+      # wipes them. WORKER_NAME tells the script which live Worker to read
+      # (the deploy overrides the adapter's default name via --name).
+      - name: Inject live bindings
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_NAME:           ${{ vars.WORKER_NAME }}
+        run: node scripts/inject-live-bindings.mjs
+
+      # Deploy. --name overrides the adapter's generated name so a single
+      # starter codebase can power multiple WP sites on one CF account:
+      # each site's plugin sets its own WORKER_NAME. --keep-vars preserves
+      # the plain-text vars + secrets the plugin pushed via CF API.
+      # --var WORKER_ENV declares this Worker's identity (production =
+      # edge + R2 caching active; see src/middleware.ts) so a fresh
+      # Worker behaves correctly even before the plugin's first var push.
+      # Astro emits .wrangler/deploy/config.json at the repo root that
+      # redirects wrangler to dist/server/wrangler.json, so run from root.
+      - name: Deploy (production)
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --keep-vars --name "${{ vars.WORKER_NAME }}" --var WORKER_ENV:production
+
+      # When the production Worker is reached via a custom domain, its
+      # workers.dev URL is a second door to the same site (duplicate
+      # content, confusing tests) — and wrangler silently ENABLES it
+      # whenever it creates a fresh Worker whose config has no routes,
+      # e.g. after a delete + redeploy. Force it OFF after every
+      # production deploy, but ONLY when a custom domain is attached —
+      # a site running prod on workers.dev alone must keep it on. The
+      # staging workflow does the opposite: staging never has a custom
+      # domain, so its workers.dev URL always stays ON. (The WP
+      # plugin's "Push to Astro Worker" applies the same defaults, so
+      # either pipeline self-heals the other.)
+      - name: Disable workers.dev subdomain (production, custom domain only)
+        env:
+          CF_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          count=$(curl -fsSL \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/domains?service=${{ vars.WORKER_NAME }}" \
+            -H "Authorization: Bearer ${CF_API_TOKEN}" | jq '.result | length')
+          if [ "${count:-0}" -gt 0 ]; then
+            curl -fsSL -X POST \
+              "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/scripts/${{ vars.WORKER_NAME }}/subdomain" \
+              -H "Authorization: Bearer ${CF_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              --data '{"enabled":false,"previews_enabled":false}'
+            echo "workers.dev subdomain disabled (custom domain present)"
+          else
+            echo "no custom domain attached — leaving workers.dev subdomain as-is"
+          fi

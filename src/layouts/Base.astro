@@ -1,0 +1,369 @@
+---
+import '../styles/global.css';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteFooter from '../components/SiteFooter.astro';
+import SEOJsonLd from '../components/SEOJsonLd.astro';
+import {
+	WP_BASE_URL,
+	getCategories,
+	getFeaturedImageAlt,
+	getFeaturedImageUrl,
+	getSeoHead,
+	getSiteConfig,
+	type WPCategory,
+	type WPPost,
+} from '../lib/wp';
+import {
+	IS_STAGING,
+	SITE_DESCRIPTION,
+	SITE_INDEXABLE,
+	SITE_NAME,
+	SITE_OG_IMAGE_DEFAULT,
+	SITE_TITLE,
+	SITE_TWITTER_HANDLE,
+	absoluteUrl,
+} from '../lib/site';
+
+interface Props {
+	// The page-specific title (post/page/archive name). Omit on the home
+	// page so it falls back to the site's own name (from WP via site-config).
+	title?: string;
+	description?: string;
+	image?: string | null;
+	imageWidth?: number;
+	imageHeight?: number;
+	imageAlt?: string;
+	type?: 'website' | 'article';
+	publishedTime?: string;
+	modifiedTime?: string;
+	author?: string | null;
+	noIndex?: boolean;
+	// Article-page hook. When provided, drives JSON-LD Article + BreadcrumbList
+	// schemas and the article-specific OG/Twitter tags. Featured-image data is
+	// pulled from `_embedded` so the page doesn't have to forward each field
+	// individually.
+	post?: WPPost;
+	// Breadcrumb chain (Home → … → current) for the page's BreadcrumbList
+	// JSON-LD. Emitted ONLY on the hand-rolled fallback path — when an SEO
+	// plugin head is present it already carries breadcrumb schema, so we
+	// don't emit a second one. Pass the same chain used for the visual
+	// breadcrumb so the two agree.
+	breadcrumb?: { name: string; href: string }[];
+	// Extra classes appended to <body>. Used by the article template to
+	// emit WP-style post-identifying classes (postid-{id}, single-post,
+	// post-{slug}). Leave undefined on non-post templates.
+	bodyClass?: string;
+	// Skip the SEO-plugin head fetch. Set on synthetic pages (404,
+	// internal-error, etc.) where the current pathname doesn't
+	// correspond to a real WP URL — the SEO plugin would either 404 or
+	// return generic site-wide defaults that compete with the page's
+	// intended meta.
+	skipSeoHead?: boolean;
+	// Override for the SEO head fragment. Pages that already fetched the
+	// head via a bundle endpoint (e.g. /single) pass it in here to avoid
+	// the duplicate per-request fetch. `undefined` means "fetch it
+	// yourself"; explicit `null` means "the SEO plugin returned nothing
+	// for this URL, fall through to hand-rolled meta" — same effect as a
+	// failed fetch.
+	seoHead?: string | null;
+	// Inject the AMP Story Player runtime (JS + CSS from
+	// cdn.ampproject.org) into <head>. Set only when the rendered
+	// post body actually contains an <amp-story-player> custom
+	// element — otherwise the runtime is dead weight on the page.
+	// Detection happens at the caller (`[slug].astro`) via a cheap
+	// substring check on the prepared post HTML.
+	ampStoryPlayer?: boolean;
+}
+
+const {
+	title,
+	description = SITE_DESCRIPTION,
+	image = null,
+	imageWidth,
+	imageHeight,
+	imageAlt,
+	type = 'website',
+	publishedTime,
+	modifiedTime,
+	author,
+	noIndex = false,
+	post,
+	breadcrumb,
+	bodyClass,
+	skipSeoHead = false,
+	seoHead: seoHeadOverride,
+	ampStoryPlayer = false,
+} = Astro.props;
+
+// SEO head fragment: a pre-rendered <head> chunk the active SEO
+// plugin (Rank Math or Yoast) would emit on the WP frontend for this
+// URL. Contains title + description + canonical + robots +
+// OG/Twitter/article:* + the schema JSON-LD @graph. When present, it
+// owns all SEO and schema tags; we keep only page-essential markup
+// (charset, viewport, favicons, RSS link, theme script).
+//
+// Why pull it on every page: WP is the editorial source of truth
+// for SEO. Hand-rolled meta on the Astro side will always lag
+// behind what editors configure (per-post meta description, schema
+// type overrides, focus keyword, etc.). One round-trip per cold
+// render is worth that consistency. Per-isolate cache (60s) + the
+// middleware's R2/edge cache covers the steady state.
+// Source priority for the SEO head fragment:
+//   1. Explicit prop (any value, including null) — caller already has it
+//      from a bundle endpoint and we'd just duplicate the fetch.
+//   2. Skip flag — synthetic page (404, etc.), don't ask the SEO plugin.
+//   3. Otherwise — fetch directly for the current pathname.
+let seoHead: string | null;
+if (seoHeadOverride !== undefined) {
+	seoHead = seoHeadOverride;
+} else if (skipSeoHead || !WP_BASE_URL) {
+	seoHead = null;
+} else {
+	seoHead = await getSeoHead(`${WP_BASE_URL}${Astro.url.pathname}`);
+}
+
+// Site-wide config from the WP custom endpoint (cached per isolate).
+// Returns null when the endpoint isn't available — fall through to env
+// defaults below in that case. See doc/site-config-spec.md.
+const siteConfig = await getSiteConfig();
+
+// Effective brand / SEO values: prefer WP-driven site-config, fall back
+// to the env constants from lib/site.ts. Each field is independent so a
+// partial config still benefits from the values that ARE set.
+const effectiveSiteName = siteConfig?.brand.name ?? SITE_NAME;
+const effectiveSiteDescription = siteConfig?.brand.description ?? SITE_DESCRIPTION;
+const effectiveBrandSuffix = siteConfig?.brand.name ?? SITE_TITLE;
+const effectiveTwitterHandle =
+	siteConfig?.social?.twitter ?? SITE_TWITTER_HANDLE ?? '';
+const effectiveOgDefaultImage = siteConfig?.brand.og_default_image?.url
+	?? SITE_OG_IMAGE_DEFAULT;
+const effectiveOgDefaultWidth = siteConfig?.brand.og_default_image?.width;
+const effectiveOgDefaultHeight = siteConfig?.brand.og_default_image?.height;
+
+// `indexable` is sourced from siteConfig if present, otherwise from the
+// existing SITE_INDEXABLE env constant. `noIndex` page-level override
+// always wins. On the STAGING worker indexing is refused unconditionally
+// — worker identity outranks every site-level setting, so a staging URL
+// can never leak into search results however WP or the env is configured.
+const siteIndexable = IS_STAGING ? false : (siteConfig?.indexable ?? SITE_INDEXABLE);
+
+// Pull featured-image dimensions from the post's `_embedded.wp:featuredmedia`
+// if available, so og:image:width/height land without callers passing them.
+const featuredMedia = post?._embedded?.['wp:featuredmedia']?.[0];
+const featuredSizes = featuredMedia?.media_details?.sizes ?? {};
+const preferredSize = featuredSizes.large ?? featuredSizes.medium_large ?? featuredSizes.full;
+const effectiveImage = image ?? (post ? getFeaturedImageUrl(post, 'large') : null);
+const effectiveImageAlt = imageAlt ?? (post ? getFeaturedImageAlt(post) : '');
+const effectiveImageWidth = imageWidth ?? preferredSize?.width ?? effectiveOgDefaultWidth;
+const effectiveImageHeight = imageHeight ?? preferredSize?.height ?? effectiveOgDefaultHeight;
+
+// Strip HTML so meta description is clean plain text. Trim to a polite
+// length — Google truncates around 155–160 characters on most SERPs.
+const rawDescription = description !== undefined ? description : effectiveSiteDescription;
+const cleanDescription = stripHtmlAndCollapse(rawDescription).slice(0, 200);
+
+// Page title defaults to the site's own name (WP site title via
+// site-config, else the SITE_TITLE env fallback) when a page doesn't
+// provide one — e.g. the home page.
+const pageTitle = title && title.trim() !== '' ? title : effectiveBrandSuffix;
+const fullTitle = !effectiveBrandSuffix
+	|| pageTitle === effectiveBrandSuffix
+	|| pageTitle.endsWith(effectiveBrandSuffix)
+		? pageTitle
+		: `${pageTitle} — ${effectiveBrandSuffix}`;
+const canonical = absoluteUrl(Astro.url.pathname);
+
+const ogImage = effectiveImage
+	? absoluteUrl(effectiveImage)
+	: absoluteUrl(effectiveOgDefaultImage);
+
+const indexable = !noIndex && siteIndexable;
+const robotsContent = indexable
+	? 'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1'
+	: 'noindex, nofollow';
+
+// When this page must not be indexed, the Rank Math head fragment's own
+// robots meta must not survive the passthrough — WP believes the site is
+// public and emits "follow, index, ..." which would override the
+// noindex intent (this is exactly how a noindex site once shipped
+// index,follow meta while robots.txt said Disallow). Strip it here; the
+// seoHead branch below emits our own noindex meta instead. When
+// indexable, Rank Math stays the per-URL source of truth (it may
+// legitimately noindex specific pages), so the fragment passes through
+// untouched.
+if (!indexable && seoHead) {
+	seoHead = seoHead.replace(/<meta[^>]*\bname=["']robots["'][^>]*>/gi, '');
+}
+
+// Breadcrumb JSON-LD. Emit our own ONLY when the page's head doesn't
+// already carry one — i.e. no SEO-plugin head, OR a head (Rank Math /
+// Yoast) that isn't configured to output BreadcrumbList schema. Guards
+// against BOTH a duplicate BreadcrumbList and (the failure this exists to
+// prevent) a total gap when the SEO plugin emits everything EXCEPT the
+// breadcrumb. Fed by the same chain as the visible breadcrumb.
+const headHasBreadcrumb = !!seoHead && /"BreadcrumbList"/.test(seoHead);
+let breadcrumbLd: string | null = null;
+if (breadcrumb && breadcrumb.length > 1 && !headHasBreadcrumb) {
+	breadcrumbLd = JSON.stringify({
+		'@context': 'https://schema.org',
+		'@type': 'BreadcrumbList',
+		itemListElement: breadcrumb.map((c, i) => ({
+			'@type': 'ListItem',
+			position: i + 1,
+			name: c.name,
+			item: absoluteUrl(c.href),
+		})),
+	});
+}
+
+let categories: WPCategory[] = [];
+try {
+	const all = await getCategories();
+	categories = all
+		.filter((c) => c.count > 0)
+		.sort((a, b) => b.count - a.count)
+		.slice(0, 8);
+} catch {
+	// leave categories empty if WP is unreachable
+}
+
+function stripHtmlAndCollapse(html: string): string {
+	return html
+		.replace(/<[^>]+>/g, ' ')
+		.replace(/&nbsp;/g, ' ')
+		.replace(/&amp;/g, '&')
+		.replace(/&quot;/g, '"')
+		.replace(/&#8217;|&rsquo;/g, "'")
+		.replace(/\s+/g, ' ')
+		.trim();
+}
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		{/*
+		 * Pre-paint theme setter. Runs synchronously before CSS resolves so
+		 * the page renders in the user's preferred theme on first paint
+		 * (no flash of dark when the user wants light). Reads
+		 * localStorage('theme') first, falls back to prefers-color-scheme.
+		 * Must stay at the top of <head> and must be is:inline so Astro
+		 * doesn't move or defer it.
+		 */}
+		<script is:inline>
+			(function () {
+				try {
+					var saved = localStorage.getItem('theme');
+					if (saved === 'dark' || saved === 'light') {
+						document.documentElement.dataset.theme = saved;
+						return;
+					}
+				} catch (e) {}
+				var prefersLight =
+					typeof window.matchMedia === 'function' &&
+					window.matchMedia('(prefers-color-scheme: light)').matches;
+				document.documentElement.dataset.theme = prefersLight ? 'light' : 'dark';
+			})();
+		</script>
+		<meta name="generator" content={Astro.generator} />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="alternate icon" href="/favicon.ico" />
+		<link rel="alternate" type="application/rss+xml" title={`${effectiveSiteName} feed`} href={absoluteUrl('/feed/')} />
+		<link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+		<link rel="preconnect" href="https://rsms.me/" />
+		<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+
+		{ampStoryPlayer && (
+			<>
+				<script async src="https://cdn.ampproject.org/amp-story-player-v0.js"></script>
+				<link rel="stylesheet" href="https://cdn.ampproject.org/amp-story-player-v0.css" />
+				{/*
+				 * The Web Stories block emits the embed size as CSS
+				 * variables on .wp-block-embed__wrapper. On the live WP
+				 * frontend, Google's plugin enqueues a stylesheet that
+				 * translates them into real width/height rules; we don't
+				 * inherit those enqueues, so the wrapper renders at zero
+				 * size. Replicate the minimum needed here so the player
+				 * has a visible box.
+				 */}
+				<style is:inline>
+					.wp-block-web-stories-embed { margin: 2rem auto; display: flex; justify-content: center; }
+					.wp-block-web-stories-embed .wp-block-embed__wrapper {
+						width: var(--width);
+						height: var(--height);
+						max-width: 100%;
+					}
+					.wp-block-web-stories-embed amp-story-player {
+						display: block;
+						width: 100%;
+						height: 100%;
+					}
+				</style>
+			</>
+		)}
+
+		{seoHead ? (
+			/*
+			 * Rank Math is the source of truth for this URL — inject its
+			 * full pre-rendered head fragment. Includes title, meta
+			 * description, canonical, OG/Twitter/article:*, robots (stripped
+			 * + replaced with noindex above when the site must not be
+			 * indexed — staging worker or indexing disabled), and
+			 * the rich JSON-LD @graph (Organization, WebSite, ImageObject,
+			 * WebPage, Person, NewsArticle/Article subtype). Anything we'd
+			 * hand-roll below would just duplicate or fight it.
+			 */
+			<>
+				<Fragment set:html={seoHead} />
+				{!indexable && <meta name="robots" content={robotsContent} />}
+			</>
+		) : (
+			/*
+			 * Fallback path — Rank Math endpoint unavailable, returned a
+			 * non-2xx, or was skipped (e.g. 404 page). Emit the previous
+			 * hand-rolled meta + JSON-LD so the page still has SEO surface.
+			 */
+			<>
+				<title>{fullTitle}</title>
+				<meta name="description" content={cleanDescription} />
+				<meta name="robots" content={robotsContent} />
+				<link rel="canonical" href={canonical} />
+				<meta property="og:type" content={type} />
+				<meta property="og:site_name" content={effectiveSiteName} />
+				<meta property="og:title" content={title} />
+				<meta property="og:description" content={cleanDescription} />
+				<meta property="og:url" content={canonical} />
+				<meta property="og:image" content={ogImage} />
+				{effectiveImageWidth && <meta property="og:image:width" content={String(effectiveImageWidth)} />}
+				{effectiveImageHeight && <meta property="og:image:height" content={String(effectiveImageHeight)} />}
+				{effectiveImageAlt && <meta property="og:image:alt" content={effectiveImageAlt} />}
+				{publishedTime && <meta property="article:published_time" content={publishedTime} />}
+				{modifiedTime && <meta property="article:modified_time" content={modifiedTime} />}
+				{author && <meta property="article:author" content={author} />}
+				<meta name="twitter:card" content="summary_large_image" />
+				<meta name="twitter:title" content={title} />
+				<meta name="twitter:description" content={cleanDescription} />
+				<meta name="twitter:image" content={ogImage} />
+				{effectiveImageAlt && <meta name="twitter:image:alt" content={effectiveImageAlt} />}
+				{effectiveTwitterHandle && <meta name="twitter:site" content={effectiveTwitterHandle} />}
+				<SEOJsonLd post={post} siteConfig={siteConfig} />
+			</>
+		)}
+
+		{/* Breadcrumb schema — emitted here (not in SEOJsonLd) so it also
+		    covers the SEO-plugin-head path when that head lacks a
+		    BreadcrumbList. Null when the head already has one. */}
+		{breadcrumbLd && (
+			<script type="application/ld+json" is:inline set:html={breadcrumbLd} />
+		)}
+	</head>
+	<body class={bodyClass}>
+		<SiteHeader categories={categories} siteConfig={siteConfig} />
+		<main class="container">
+			<slot />
+		</main>
+		<SiteFooter categories={categories} siteConfig={siteConfig} />
+	</body>
+</html>

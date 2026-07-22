@@ -1,0 +1,112 @@
+---
+// Visible breadcrumb nav. Renders a simple ordered list with
+// separators between items; the last item is the current page
+// (rendered as plain text with aria-current="page", not a link).
+//
+// Used on both /category/... archive pages and on /<slug>/ post pages.
+// The matching JSON-LD `BreadcrumbList` is emitted from the same chain by
+// SEOJsonLd (via Base's `breadcrumb` prop) on the hand-rolled fallback, so
+// visible + semantic always agree; when an SEO plugin is active its head
+// carries the breadcrumb schema instead.
+
+import type { BreadcrumbItem } from '../lib/breadcrumb';
+
+interface Props {
+	items: BreadcrumbItem[];
+	// Optional visual variant — 'onDark' renders white text + lighter
+	// hover colour, for use over a dark hero image (post pages).
+	// Default 'standard' uses the page foreground tokens.
+	variant?: 'standard' | 'onDark';
+}
+
+const { items, variant = 'standard' } = Astro.props;
+---
+
+{items.length > 1 && (
+	<nav class:list={['breadcrumb', `breadcrumb--${variant}`]} aria-label="Breadcrumb">
+		<ol class="breadcrumb__list">
+			{items.map((item, i) => {
+				const isLast = i === items.length - 1;
+				return (
+					<li class="breadcrumb__item">
+						{isLast ? (
+							<span class="breadcrumb__current" aria-current="page">
+								{item.name}
+							</span>
+						) : (
+							<>
+								<a class="breadcrumb__link" href={item.href}>{item.name}</a>
+								<span class="breadcrumb__sep" aria-hidden="true">/</span>
+							</>
+						)}
+					</li>
+				);
+			})}
+		</ol>
+	</nav>
+)}
+
+<style>
+	.breadcrumb {
+		font-size: 0.78rem;
+		line-height: 1.4;
+		letter-spacing: 0.04em;
+	}
+
+	.breadcrumb__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0;
+		row-gap: 0.35rem;
+	}
+
+	.breadcrumb__item {
+		margin: 0;
+		display: inline-flex;
+		align-items: center;
+	}
+
+	.breadcrumb__link {
+		color: var(--text-dim, #a1a7b0);
+		text-decoration: none;
+		transition: color 0.15s ease;
+	}
+
+	.breadcrumb__link:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.breadcrumb__sep {
+		margin: 0 0.55rem;
+		color: var(--text-muted, #6b7280);
+		opacity: 0.6;
+	}
+
+	.breadcrumb__current {
+		color: var(--text, #fff);
+		font-weight: 600;
+	}
+
+	/* On-dark variant — used inside the article hero where the
+	 * background is a darkened photo. Brighter base text + accent
+	 * hover so it stays legible across image backgrounds. */
+	.breadcrumb--onDark .breadcrumb__link {
+		color: rgba(255, 255, 255, 0.85);
+		text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+	}
+
+	.breadcrumb--onDark .breadcrumb__link:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.breadcrumb--onDark .breadcrumb__sep {
+		color: rgba(255, 255, 255, 0.55);
+	}
+
+	.breadcrumb--onDark .breadcrumb__current {
+		color: #fff;
+	}
+</style>

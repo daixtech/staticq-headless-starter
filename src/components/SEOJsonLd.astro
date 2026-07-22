@@ -1,0 +1,112 @@
+---
+// Emits JSON-LD structured-data scripts for the current page. Always emits
+// Organization + WebSite. Adds Article when `post` is set. (BreadcrumbList
+// is emitted by Base.astro so it can also cover the SEO-plugin-head path.)
+//
+// Schemas are checked against Google's Rich Results Test friendly shape —
+// the minimum fields each schema needs to be valid + the optional fields
+// that actually move the needle in SERPs.
+
+import type { SiteConfig, WPPost } from '../lib/wp';
+import {
+	getAuthorName,
+	getFeaturedImageAlt,
+	getFeaturedImageUrl,
+} from '../lib/wp';
+import { truncateAtWord } from '../lib/html';
+import {
+	SITE_LOGO_URL,
+	SITE_NAME,
+	SITE_OG_IMAGE_DEFAULT,
+	SITE_URL,
+	absoluteUrl,
+} from '../lib/site';
+
+interface Props {
+	post?: WPPost;
+	// Site-wide config from the WP custom endpoint. When set, takes
+	// precedence over the env-derived SITE_NAME / SITE_LOGO_URL etc.
+	siteConfig?: SiteConfig | null;
+}
+
+const { post, siteConfig } = Astro.props;
+
+const pageUrl = absoluteUrl(Astro.url.pathname);
+const effectiveSiteName = siteConfig?.brand.name ?? SITE_NAME;
+const effectiveLogoUrl = siteConfig?.brand.logo?.url ?? SITE_LOGO_URL;
+const logoUrl = absoluteUrl(effectiveLogoUrl);
+
+const organization: Record<string, unknown> = {
+	'@context': 'https://schema.org',
+	'@type': 'Organization',
+	'@id': `${SITE_URL}/#organization`,
+	name: effectiveSiteName,
+	url: SITE_URL,
+	logo: {
+		'@type': 'ImageObject',
+		url: logoUrl,
+		...(siteConfig?.brand.logo?.width && { width: siteConfig.brand.logo.width }),
+		...(siteConfig?.brand.logo?.height && { height: siteConfig.brand.logo.height }),
+	},
+};
+
+const website = {
+	'@context': 'https://schema.org',
+	'@type': 'WebSite',
+	'@id': `${SITE_URL}/#website`,
+	url: SITE_URL,
+	name: effectiveSiteName,
+	publisher: { '@id': `${SITE_URL}/#organization` },
+	// Sitelinks searchbox — points at the starter's /search/?s= route.
+	// Generic: works for any site that keeps the bundled search page.
+	potentialAction: {
+		'@type': 'SearchAction',
+		target: {
+			'@type': 'EntryPoint',
+			urlTemplate: `${SITE_URL}/search/?s={search_term_string}`,
+		},
+		'query-input': 'required name=search_term_string',
+	},
+};
+
+let article: Record<string, unknown> | null = null;
+if (post) {
+	const heroImage = getFeaturedImageUrl(post, 'large');
+	const heroAlt = getFeaturedImageAlt(post);
+	const authorName = getAuthorName(post);
+	const ogImage = heroImage
+		?? absoluteUrl(siteConfig?.brand.og_default_image?.url ?? SITE_OG_IMAGE_DEFAULT);
+	article = {
+		'@context': 'https://schema.org',
+		'@type': 'Article',
+		'@id': `${pageUrl}#article`,
+		headline: truncateAtWord(stripHtml(post.title.rendered), 110),
+		image: [absoluteUrl(ogImage)],
+		datePublished: post.date,
+		dateModified: post.modified || post.date,
+		mainEntityOfPage: { '@type': 'WebPage', '@id': pageUrl },
+		publisher: { '@id': `${SITE_URL}/#organization` },
+		...(authorName && {
+			author: {
+				'@type': 'Person',
+				name: authorName,
+			},
+		}),
+		...(heroAlt && { description: heroAlt }),
+	};
+}
+
+// Breadcrumb JSON-LD is emitted by Base.astro (from the page's breadcrumb
+// chain), not here — so it can also cover the SEO-plugin-head path when
+// that head lacks a BreadcrumbList.
+
+function stripHtml(html: string): string {
+	return html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+}
+---
+
+<script type="application/ld+json" is:inline set:html={JSON.stringify(organization)} />
+<script type="application/ld+json" is:inline set:html={JSON.stringify(website)} />
+{article && (
+	<script type="application/ld+json" is:inline set:html={JSON.stringify(article)} />
+)}

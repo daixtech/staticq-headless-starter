@@ -1,0 +1,305 @@
+---
+import Base from '../layouts/Base.astro';
+import ArticleHero from '../components/ArticleHero.astro';
+import ArticleByline from '../components/ArticleByline.astro';
+import ArticleBody from '../components/ArticleBody.astro';
+import ArticlePostFooter from '../components/ArticlePostFooter.astro';
+import ArticleSidebar from '../components/ArticleSidebar.astro';
+import CategoryStrip from '../components/CategoryStrip.astro';
+import GalleryLightbox from '../components/GalleryLightbox.astro';
+import PageBreadcrumb from '../components/PageBreadcrumb.astro';
+import {
+	WP_BASE_URL,
+	formatDate,
+	getAuthorName,
+	getCategories,
+	getCategoryArchive,
+	getHomeArchive,
+	getPageBySlug,
+	getPostBySlug,
+	getPostCustomFields,
+	getPrimaryCategory,
+	getSingleBundle,
+	type GalleryAttachment,
+	type WPPost,
+} from '../lib/wp';
+import { buildPostChain } from '../lib/breadcrumb';
+import { preparePostBody, type HeadingInfo } from '../lib/html';
+
+function stripHtml(html: string): string {
+	return html.replace(/<[^>]+>/g, '').trim();
+}
+
+function truncate(text: string, max = 200): string {
+	if (text.length <= max) return text;
+	return text.slice(0, max - 1).trimEnd() + '…';
+}
+
+const { slug } = Astro.params;
+
+// `/home/` is the WP front page on the origin and 302s to `/` there.
+// Without this guard, headless would resolve the slug to the page
+// record and render it under both `/` and `/home/`, producing a
+// duplicate-content URL. Mirror WP and bounce.
+if (slug === 'home') {
+	return Astro.redirect('/', 301);
+}
+
+// Posts and pages share the root namespace (matches WP permalink structure).
+// Preferred path: the /staticq/v1/single bundle endpoint returns the post
+// + Rank Math head in ONE call, with no `_embed=1` wp:attachment fan-out.
+// On gallery posts this is the difference between 1s and 50s. Falls back
+// to the per-call getPostBySlug + getPageBySlug path when the bundle is
+// unavailable (older plugin install, network error, etc.).
+let post: WPPost | null = null;
+let page: WPPost | null = null;
+let prefetchedSeoHead: string | null | undefined;
+let galleryAttachments: GalleryAttachment[] = [];
+
+// Bundle is used for posts (where the gallery-attachment fan-out is
+// the expensive bit). For pages we always go through the standard
+// /wp/v2/pages endpoint because the bundle endpoint has an internal
+// content cache that doesn't get invalidated when the Tipi→Gutenberg
+// migration rewrites post_content — pages would keep rendering stale
+// HTML even after a successful migration + edge purge. Standard REST
+// reads wp_posts.post_content fresh on each call, so we never get
+// stuck on a stale render. Costs one extra round-trip per page
+// request and loses the bundle's prefetched SEO head (Base.astro
+// falls back to fetching it itself when prefetchedSeoHead is
+// null), but for pages the savings were never large anyway —
+// pages don't have the multi-MB attachment fan-out problem posts do.
+const bundle = slug ? await getSingleBundle(slug) : null;
+if (bundle && bundle.type === 'post') {
+	post = bundle.post;
+	prefetchedSeoHead = bundle.seo_head ?? bundle.rank_math_head ?? null;
+	galleryAttachments = bundle.gallery_attachments ?? [];
+} else if (bundle && bundle.type === 'page') {
+	page = slug ? await getPageBySlug(slug) : null;
+} else {
+	// Fallback path — keeps the site working against installs that don't
+	// yet expose /staticq/v1/single. Base.astro will fetch the Rank Math
+	// head itself in this branch.
+	post = slug ? await getPostBySlug(slug) : null;
+	page = !post && slug ? await getPageBySlug(slug) : null;
+}
+
+if (!post && !page) {
+	return Astro.rewrite('/404');
+}
+
+// Canonical-URL redirect for hierarchical pages. A page whose WP
+// permalink is /parent/child/ would otherwise be reachable at /child/
+// here too — this route catches anything single-segment. Compare the
+// requested pathname to the WP-declared link's pathname and 301 to the
+// canonical when they differ. Posts always have flat permalinks so the
+// paths match and no redirect fires. Skipped for the WP front page
+// (handled by the `slug === 'home'` early return above).
+if (page && page.link) {
+	try {
+		const canonical = new URL(page.link).pathname;
+		if (canonical && canonical !== Astro.url.pathname) {
+			return Astro.redirect(canonical, 301);
+		}
+	} catch {
+		// Malformed link — fall through and render at the requested URL.
+	}
+}
+
+const isPost = post !== null;
+const author = post ? getAuthorName(post) : undefined;
+const category = post ? getPrimaryCategory(post) : null;
+
+// Breadcrumb chain + subtitle for posts. Two custom REST fields aren't
+// surfaced by the /staticq/v1/single bundle endpoint (it strips
+// register_rest_field additions): `primary_category` (drives breadcrumb
+// chain) and `subtitle` (renders below H1). When the bundle was the
+// data source, we fetch both in one small follow-up call. When the post
+// came from standard REST those fields are already on `post` and the
+// follow-up is skipped.
+let breadcrumbItems: ReturnType<typeof buildPostChain> = [];
+if (post) {
+	const primaryOnPost = post.primary_category ?? post.rank_math_primary_category;
+	const subtitleOnPost = post.subtitle ?? post.zeen_subtitle;
+	const needsCustomFetch = bundle && (
+		primaryOnPost === undefined || subtitleOnPost === undefined
+	);
+	const [allCats, fetchedCustom] = await Promise.all([
+		getCategories().catch(() => []),
+		needsCustomFetch
+			? getPostCustomFields(post.id)
+			: Promise.resolve({
+				primary_category: primaryOnPost ?? null,
+				subtitle: subtitleOnPost ?? '',
+			}),
+	]);
+	if (needsCustomFetch) {
+		// Mutate the post in place so downstream code (card components,
+		// the hero subtitle line, buildPostChain) sees the resolved
+		// values without prop drilling.
+		(post as WPPost).primary_category = fetchedCustom.primary_category;
+		(post as WPPost).subtitle = fetchedCustom.subtitle;
+	}
+	breadcrumbItems = buildPostChain(post, allCats);
+}
+
+const titleSource = post ?? page!;
+const cleanTitle = stripHtml(titleSource.title.rendered);
+const cleanExcerpt = truncate(stripHtml(titleSource.excerpt.rendered));
+
+// Run the body through the prep pipeline: galleries, link rewrites, heading
+// ids. Headings flow into the sidebar's TOC.
+let preparedHtml = '';
+let headings: HeadingInfo[] = [];
+{
+	const rawBody = (post?.content ?? page?.content)?.rendered ?? '';
+	if (rawBody) {
+		const prepared = preparePostBody(rawBody, WP_BASE_URL);
+		preparedHtml = prepared.html;
+		headings = prepared.headings;
+	}
+}
+
+// Two DIFFERENT related-content strategies, so a post never appears twice:
+//   - Sidebar rail  → "More from {category}": newest in this post's own
+//     primary category.
+//   - Bottom strip  → "Latest from the site": newest across the whole site.
+// The bottom strip excludes the current post AND everything already shown
+// in the sidebar rail, so the two blocks never overlap. Both fetches are
+// best-effort — an empty list just hides that block.
+let sidebarRelated: WPPost[] = [];
+if (post && category) {
+	try {
+		const { posts: candidates } = await getCategoryArchive(Number(category.id), null);
+		sidebarRelated = candidates.filter((p) => p.id !== post.id).slice(0, 5);
+	} catch {
+		// best-effort
+	}
+}
+
+let stripRelated: WPPost[] = [];
+if (post) {
+	try {
+		const { posts: latest } = await getHomeArchive(null);
+		const seen = new Set<number>([post.id, ...sidebarRelated.map((p) => p.id)]);
+		stripRelated = latest.filter((p) => !seen.has(p.id)).slice(0, 4);
+	} catch {
+		// best-effort
+	}
+}
+
+// WP `body_class()`-style classes on single-post pages. Lets CSS/JS
+// target a specific post (`postid-1234`) or all posts (`single-post`).
+// Not set on WP-page fallback, since "single-post" wouldn't fit there.
+const bodyClass = post
+	? `single single-post postid-${post.id} post-${post.slug}`
+	: undefined;
+
+// Conditionally load the AMP Story Player runtime. Editors embed
+// stories via Google's Web Stories block which emits an
+// `<amp-story-player>` custom element in the post body; without the
+// runtime that element is inert. The substring check is cheap and
+// keeps the ~30 KB of CDN assets off every other post.
+const hasAmpStoryPlayer = preparedHtml.includes('amp-story-player');
+---
+
+<Base
+	title={cleanTitle}
+	description={cleanExcerpt || undefined}
+	type={isPost ? 'article' : 'website'}
+	publishedTime={post?.date}
+	modifiedTime={titleSource.modified}
+	author={author}
+	post={post ?? undefined}
+	breadcrumb={breadcrumbItems}
+	bodyClass={bodyClass}
+	seoHead={prefetchedSeoHead}
+	ampStoryPlayer={hasAmpStoryPlayer}
+>
+	{isPost ? (
+		<>
+			<ArticleHero post={post!} category={category} breadcrumbItems={breadcrumbItems} />
+
+			<div class="article-layout">
+				<div class="article-main">
+					<ArticleByline post={post!} />
+					<ArticleBody html={preparedHtml} />
+					<ArticlePostFooter post={post!} />
+				</div>
+				<ArticleSidebar
+					headings={headings}
+					relatedPosts={sidebarRelated}
+					relatedTitle={category ? `More from ${category.name}` : 'More from the site'}
+				/>
+			</div>
+
+			{stripRelated.length > 0 && (
+				<CategoryStrip
+					title="Latest from the site"
+					posts={stripRelated}
+					cardSize="md"
+					columns={4}
+				/>
+			)}
+		</>
+	) : (
+		<article class="wp-page">
+			<div class="wp-page__head">
+				<PageBreadcrumb
+					crumbs={[
+						{ name: 'Home', href: '/' },
+						{ name: page!.title.rendered, href: `/${page!.slug}/` },
+					]}
+				/>
+				<h1 class="wp-page__title" set:html={page!.title.rendered} />
+				<div class="wp-page__meta">Updated {formatDate(page!.modified)}</div>
+			</div>
+			<ArticleBody html={preparedHtml} />
+		</article>
+	)}
+
+	<GalleryLightbox attachments={galleryAttachments} />
+</Base>
+
+<style>
+	.article-layout {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 2rem;
+		margin: 2.5rem 0 4rem;
+	}
+
+	.article-main {
+		min-width: 0;
+		max-width: 760px;
+	}
+
+	@media (min-width: 1000px) {
+		.article-layout {
+			grid-template-columns: minmax(0, 760px) minmax(280px, 320px);
+			gap: 3rem;
+			justify-content: space-between;
+		}
+	}
+
+	.wp-page {
+		max-width: 820px;
+		margin: 0 auto;
+		padding: 2rem 0 4rem;
+	}
+
+	.wp-page__title {
+		font-size: clamp(1.9rem, 3.6vw, 2.8rem);
+		font-weight: 900;
+		line-height: 1.1;
+		letter-spacing: -0.015em;
+		margin: 0 0 0.8rem;
+	}
+
+	.wp-page__meta {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.85rem;
+		padding-bottom: 1.5rem;
+		border-bottom: 1px solid var(--border, #272c33);
+		margin-bottom: 2rem;
+	}
+</style>

@@ -1,0 +1,285 @@
+---
+import type { WPPost } from '../lib/wp';
+import {
+	formatDate,
+	getPrimaryCategory,
+	getResponsiveImage,
+} from '../lib/wp';
+import ResponsiveImage from './ResponsiveImage.astro';
+
+interface Props {
+	post: WPPost;
+	size?: 'sm' | 'md' | 'lg';
+	// Override the category kicker — used on category archives so the kicker
+	// shows the archive's own term rather than the post's primary term, which
+	// is otherwise often a different (e.g. "Car Culture") category.
+	kickerOverride?: { name: string; slug: string } | null;
+	// Plain-text kicker (no link). Used by the leaf-category hero strip
+	// where the kicker is a role label like "Overview" / "Specs" / "Pictures"
+	// rather than a clickable taxonomy term. Takes precedence over
+	// kickerOverride and the post's primary category.
+	kickerLabel?: string | null;
+	// Suppress the kicker entirely. Useful inside a zone whose own heading
+	// already names the category, where repeating it on every card is noise.
+	hideKicker?: boolean;
+	showDate?: boolean;
+	// Extra label rendered in the top-right of the image (e.g. "VIDEO").
+	flag?: string | null;
+}
+
+const {
+	post,
+	size = 'md',
+	kickerOverride = null,
+	kickerLabel = null,
+	hideKicker = false,
+	showDate = true,
+	flag = null,
+} = Astro.props;
+
+const preferredSize = size === 'lg' ? 'large' : 'medium_large';
+const image = getResponsiveImage(post, preferredSize);
+// `sizes` attribute reflects how the card lays out in the grid:
+// 1 column under 600px, 2 columns up to 1100px, then 3 columns above.
+// Hero (size="lg") fills the live page hero slot, ~65vw on desktop.
+const sizesAttr =
+	size === 'lg'
+		? '(max-width: 1000px) 100vw, 65vw'
+		: '(max-width: 600px) 100vw, (max-width: 1100px) 50vw, 33vw';
+const primary = getPrimaryCategory(post);
+const kicker: { name: string; slug: string } | null = hideKicker
+	? null
+	: kickerOverride
+		? kickerOverride
+		: primary
+			? { name: primary.name, slug: primary.slug }
+			: null;
+const href = `/${post.slug}/`;
+
+// Subtitle — surfaced by the staticq-headless plugin's REST field on
+// `post.subtitle` (deprecated alias: `post.zeen_subtitle`). Renders below
+// the title on cards where the post has one. Empty otherwise (slot
+// self-hides).
+const rawSubtitle = post.subtitle ?? post.zeen_subtitle;
+const subtitle = typeof rawSubtitle === 'string' ? rawSubtitle.trim() : '';
+---
+
+<article class={`ocard ocard--${size}`}>
+	<div class="ocard__media">
+		{image ? (
+			<ResponsiveImage image={image} sizes={sizesAttr} loading="lazy" />
+		) : (
+			<span class="ocard__placeholder">no image</span>
+		)}
+		<div class="ocard__shade"></div>
+		{flag && <span class="ocard__flag">{flag}</span>}
+		<div class="ocard__body">
+			{kickerLabel ? (
+				<span class="ocard__kicker ocard__kicker--label">{kickerLabel}</span>
+			) : kicker && (
+				<a href={`/category/${kicker.slug}/`} class="ocard__kicker">
+					{kicker.name}
+				</a>
+			)}
+			<h3 class="ocard__title">
+				<a href={href} class="ocard__link" set:html={post.title.rendered} />
+			</h3>
+			{subtitle && (
+				<p class="ocard__subtitle" set:html={subtitle} />
+			)}
+			{showDate && <div class="ocard__meta">{formatDate(post.date)}</div>}
+		</div>
+	</div>
+</article>
+
+<style>
+	.ocard {
+		position: relative;
+		display: block;
+		overflow: hidden;
+		border-radius: var(--radius, 4px);
+		background: var(--bg-elev, #161a1f);
+		isolation: isolate;
+	}
+
+	.ocard__media {
+		position: relative;
+		width: 100%;
+		aspect-ratio: 4 / 3;
+		overflow: hidden;
+	}
+
+	.ocard--sm .ocard__media {
+		aspect-ratio: 4 / 5;
+	}
+	.ocard--md .ocard__media {
+		aspect-ratio: 4 / 3;
+	}
+	.ocard--lg .ocard__media {
+		aspect-ratio: 16 / 10;
+	}
+
+	/*
+	 * Fill / object-fit is handled inside ResponsiveImage's scoped style.
+	 * We only add the hover transform and the transition here, and use
+	 * :global(img) so the selector reaches the <img> living inside the
+	 * child component (its element gets the child's scope hash, not ours).
+	 */
+	.ocard__media :global(img) {
+		transition: transform 500ms ease;
+	}
+
+	.ocard:hover .ocard__media :global(img) {
+		transform: scale(1.04);
+	}
+
+	.ocard__placeholder {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		color: var(--text-muted, #6b7280);
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		letter-spacing: 0.12em;
+	}
+
+	.ocard__shade {
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			to top,
+			rgba(0, 0, 0, 0.95) 0%,
+			rgba(0, 0, 0, 0.85) 25%,
+			rgba(0, 0, 0, 0.55) 50%,
+			rgba(0, 0, 0, 0.15) 75%,
+			transparent 100%
+		);
+		pointer-events: none;
+	}
+
+	.ocard__flag {
+		position: absolute;
+		top: 0.65rem;
+		right: 0.65rem;
+		background: var(--accent, #e63946);
+		color: #fff;
+		font-size: 0.65rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		padding: 0.25rem 0.5rem;
+		border-radius: 2px;
+		line-height: 1;
+		z-index: 2;
+	}
+
+	.ocard__body {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		padding: 0.9rem 1rem 1rem;
+		color: #fff;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		z-index: 1;
+	}
+
+	.ocard--lg .ocard__body {
+		padding: 1.25rem 1.4rem 1.4rem;
+		gap: 0.55rem;
+	}
+
+	.ocard__kicker {
+		display: inline-block;
+		align-self: flex-start;
+		color: var(--accent, #e63946);
+		font-size: 0.65rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		text-decoration: none;
+		position: relative;
+		z-index: 3;
+	}
+
+	.ocard__kicker:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.ocard__title {
+		font-size: 1rem;
+		line-height: 1.25;
+		font-weight: 800;
+		letter-spacing: -0.005em;
+		margin: 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.ocard--sm .ocard__title {
+		font-size: 0.92rem;
+		-webkit-line-clamp: 3;
+	}
+
+	.ocard--lg .ocard__title {
+		font-size: clamp(1.4rem, 2.4vw, 2rem);
+		line-height: 1.18;
+		-webkit-line-clamp: 3;
+	}
+
+	/*
+	 * The title's <a> is the primary clickable, but we extend its hit area to
+	 * the whole card via ::before. The kicker sits above this overlay with a
+	 * higher z-index so it remains independently clickable.
+	 */
+	.ocard__link {
+		color: #fff;
+		text-decoration: none;
+	}
+
+	.ocard__link::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+	}
+
+	.ocard__link:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	/* Optional subtitle line. Renders only when the post payload
+	 * includes a non-empty subtitle. Clamps to 2 lines so a long
+	 * subtitle on a small card doesn't push the body off the image. */
+	.ocard__subtitle {
+		font-size: 0.82rem;
+		line-height: 1.4;
+		color: rgba(255, 255, 255, 0.88);
+		margin: 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 2;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.ocard--lg .ocard__subtitle {
+		font-size: 0.95rem;
+		-webkit-line-clamp: 3;
+	}
+
+	.ocard--sm .ocard__subtitle {
+		font-size: 0.78rem;
+		-webkit-line-clamp: 2;
+	}
+
+	.ocard__meta {
+		color: rgba(255, 255, 255, 0.7);
+		font-size: 0.75rem;
+	}
+</style>

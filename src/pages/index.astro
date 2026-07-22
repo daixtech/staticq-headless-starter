@@ -1,0 +1,125 @@
+---
+import Base from '../layouts/Base.astro';
+import OverlayCard from '../components/OverlayCard.astro';
+import LatestRail from '../components/LatestRail.astro';
+import CategoryStrip from '../components/CategoryStrip.astro';
+import Pagination from '../components/Pagination.astro';
+import {
+	getFeaturedImageUrl,
+	getHomeArchive,
+	getHomepageBundle,
+	type ArchiveLayout,
+	type WPPost,
+} from '../lib/wp';
+
+// WordPress's default search permalink is `/?s=<query>` at the root.
+// Old bookmarks, Google `site:` results, and any inbound link that
+// pre-dates the headless migration land here. Redirect to `/search/`
+// where the dedicated results template lives, preserving the query.
+const searchTerm = Astro.url.searchParams.get('s');
+if (searchTerm !== null) {
+	const target = new URL('/search/', Astro.url);
+	if (searchTerm) target.searchParams.set('s', searchTerm);
+	return Astro.redirect(target.pathname + target.search, 301);
+}
+
+// Home renders the newest posts (slot-stable live page: the 10..19 newest)
+// with slot-stable pagination at the bottom — see doc/reversed-pagination.md.
+//
+// Preferred path: one call to the WP custom `/staticq/v1/homepage`
+// endpoint that returns the live posts + layout + Rank Math head in a
+// single round-trip. Fallback path: getHomeArchive against default WP
+// REST, for installs that don't expose the custom endpoint.
+let homePosts: WPPost[] = [];
+let homeLayout: ArchiveLayout = { totalPosts: 0, sealedPagesCount: 0, livePageSize: 0 };
+let prefetchedSeoHead: string | null | undefined;
+let error: string | null = null;
+
+const bundle = await getHomepageBundle();
+if (bundle) {
+	homePosts = bundle.home_archive.posts;
+	homeLayout = bundle.home_archive.layout;
+	prefetchedSeoHead = bundle.seo_head ?? bundle.rank_math_head ?? null;
+} else {
+	try {
+		const result = await getHomeArchive(null);
+		homePosts = result.posts;
+		homeLayout = result.layout;
+		prefetchedSeoHead = result.seoHead;
+	} catch (err) {
+		error = err instanceof Error ? err.message : String(err);
+	}
+}
+
+// Hero = newest post; the rail is the next 4 newest; everything after
+// that fills the "More Posts" grid. These are honest newest-first slices —
+// no "featured"/"editor's pick" framing, since nothing here is curated.
+const hero = homePosts[0];
+const rail = homePosts.slice(1, 5);
+const morePosts = homePosts.slice(5);
+
+const heroImage = hero ? getFeaturedImageUrl(hero, 'large') : null;
+---
+
+<Base image={heroImage} seoHead={prefetchedSeoHead}>
+	{error && (
+		<p class="home__error">Failed to load posts: {error}</p>
+	)}
+
+	{hero && (
+		<section class="home__top">
+			<div class="home__hero">
+				<OverlayCard post={hero} size="lg" />
+			</div>
+			<div class="home__rail">
+				<LatestRail posts={rail} title="Latest" limit={4} />
+			</div>
+		</section>
+	)}
+
+	{morePosts.length > 0 && (
+		<CategoryStrip
+			title="More Posts"
+			posts={morePosts}
+			cardSize="sm"
+			columns={5}
+		/>
+	)}
+
+	<Pagination current={null} sealedCount={homeLayout.sealedPagesCount} baseUrl="/" />
+</Base>
+
+<style>
+	.home__error {
+		color: crimson;
+		margin-top: 2rem;
+	}
+
+	.home__top {
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 1.5rem;
+		margin-top: 1.5rem;
+	}
+
+	.home__rail {
+		min-width: 0;
+	}
+
+	@media (min-width: 1000px) {
+		.home__top {
+			grid-template-columns: minmax(0, 1.85fr) minmax(280px, 1fr);
+			gap: 2rem;
+			align-items: stretch;
+		}
+
+		/*
+		 * The hero column is allowed to dominate; the rail fills the same
+		 * vertical extent. The rail container is set to overflow when it
+		 * gets taller than the hero so we don't force the hero to grow.
+		 */
+		.home__hero {
+			min-width: 0;
+		}
+	}
+</style>

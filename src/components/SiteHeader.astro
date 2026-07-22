@@ -1,0 +1,683 @@
+---
+import type { SiteConfig, WPCategory } from '../lib/wp';
+import { PRIMARY_NAV, isPrimaryNavGroup, SITE_TITLE } from '../lib/site';
+import type { PrimaryNavEntry, PrimaryNavGroup } from '../lib/site';
+
+interface Props {
+	categories: WPCategory[];
+	siteConfig?: SiteConfig | null;
+}
+
+const { categories, siteConfig } = Astro.props;
+
+// Brand shown in the logo. Prefers the WP-configured brand name, falling
+// back to SITE_TITLE (env-configurable). Rebrand by setting the SITE_TITLE
+// env var, or the default in lib/site.ts.
+const brandName = siteConfig?.brand.name ?? SITE_TITLE;
+
+// Primary nav source-of-truth, in priority order:
+//   1. siteConfig.primary_nav from the WP custom endpoint (editor-driven).
+//   2. PRIMARY_NAV in lib/site.ts.
+//   3. Top three categories by post count, if both are empty.
+// The shapes between SiteConfig and PRIMARY_NAV are identical by design.
+const fromConfig: PrimaryNavEntry[] = siteConfig?.primary_nav?.length
+	? (siteConfig.primary_nav as PrimaryNavEntry[])
+	: PRIMARY_NAV;
+const primaryNav: PrimaryNavEntry[] = fromConfig.length > 0
+	? fromConfig
+	: categories.slice(0, 3).map((c) => ({ href: `/category/${c.slug}/`, label: c.name }));
+
+// Each group entry in PRIMARY_NAV becomes its own labeled section in the
+// side panel. Pull them out for rendering, and collect every leaf slug
+// they reference so the main Categories list can hide those (no
+// duplicates). Compare by leaf slug rather than full href because the
+// grouped hrefs are canonical parent-chain paths (e.g.
+// /category/car-games/drifting-games/) while the categories list emits
+// single-segment paths from `c.slug` — matching by leaf gets the
+// dedup right regardless of the nav's URL depth.
+const sidePanelGroups: PrimaryNavGroup[] = primaryNav.filter(isPrimaryNavGroup);
+
+const sidePanelGroupedSlugs = new Set(
+	sidePanelGroups.flatMap((g) =>
+		g.children
+			.map((c) => {
+				const m = c.href.match(/^\/category\/(.+?)\/?$/);
+				if (!m) return null;
+				const segs = m[1].split('/').filter((s) => s.length > 0);
+				return segs[segs.length - 1] ?? null;
+			})
+			.filter((s): s is string => s !== null),
+	),
+);
+const categoriesForSidePanel = categories.filter(
+	(c) => !sidePanelGroupedSlugs.has(c.slug),
+);
+---
+
+<header class="site-header">
+	<div class="container site-header__top">
+		<button
+			type="button"
+			class="site-header__hamburger"
+			aria-label="Open menu"
+			aria-expanded="false"
+			aria-controls="site-menu"
+			data-nav-toggle
+		>
+			<svg viewBox="0 0 24 24" aria-hidden="true">
+				<line x1="3" y1="6" x2="21" y2="6"></line>
+				<line x1="3" y1="12" x2="21" y2="12"></line>
+				<line x1="3" y1="18" x2="21" y2="18"></line>
+			</svg>
+		</button>
+		<a href="/" class="site-header__logo">{brandName}</a>
+		<button
+			type="button"
+			class="theme-toggle"
+			aria-label="Switch to light theme"
+			data-theme-toggle
+		>
+			<svg class="theme-toggle__icon theme-toggle__icon--sun" viewBox="0 0 24 24" aria-hidden="true">
+				<circle cx="12" cy="12" r="4" fill="currentColor"></circle>
+				<g stroke="currentColor" stroke-width="2" stroke-linecap="round">
+					<line x1="12" y1="2" x2="12" y2="5"></line>
+					<line x1="12" y1="19" x2="12" y2="22"></line>
+					<line x1="2" y1="12" x2="5" y2="12"></line>
+					<line x1="19" y1="12" x2="22" y2="12"></line>
+					<line x1="4.5" y1="4.5" x2="6.7" y2="6.7"></line>
+					<line x1="17.3" y1="17.3" x2="19.5" y2="19.5"></line>
+					<line x1="4.5" y1="19.5" x2="6.7" y2="17.3"></line>
+					<line x1="17.3" y1="6.7" x2="19.5" y2="4.5"></line>
+				</g>
+			</svg>
+			<svg class="theme-toggle__icon theme-toggle__icon--moon" viewBox="0 0 24 24" aria-hidden="true">
+				<path
+					d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a.75.75 0 0 0-.99-.95 10 10 0 1 0 12.94 12.94.75.75 0 0 0-.95-.99Z"
+					fill="currentColor"
+				></path>
+			</svg>
+		</button>
+	</div>
+	<nav class="site-header__primary" aria-label="Primary">
+		<div class="container site-header__primary-inner">
+			<ul>
+				{primaryNav.map((item, idx) => {
+					if (isPrimaryNavGroup(item)) {
+						const dropdownId = `primary-nav-dropdown-${idx}`;
+						return (
+							<li class="has-dropdown">
+								<button
+									type="button"
+									class="primary-nav__trigger"
+									aria-haspopup="menu"
+									aria-expanded="false"
+									aria-controls={dropdownId}
+									data-dropdown-trigger
+								>
+									<span>{item.label}</span>
+									<svg class="primary-nav__chevron" viewBox="0 0 12 8" aria-hidden="true">
+										<path d="M1 1.5 6 6.5 11 1.5" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"></path>
+									</svg>
+								</button>
+								<ul id={dropdownId} class="primary-nav__dropdown" role="menu">
+									{item.children.map((child) => (
+										<li role="none">
+											<a href={child.href} role="menuitem">{child.label}</a>
+										</li>
+									))}
+								</ul>
+							</li>
+						);
+					}
+					return (
+						<li>
+							<a href={item.href}>{item.label}</a>
+						</li>
+					);
+				})}
+			</ul>
+		</div>
+	</nav>
+</header>
+
+<aside class="site-menu" id="site-menu" aria-label="Site menu" aria-hidden="true">
+	<button class="site-menu__backdrop" type="button" aria-label="Close menu" data-menu-close></button>
+	<div class="site-menu__panel" role="dialog" aria-modal="true" aria-labelledby="site-menu-heading">
+		<div class="site-menu__head">
+			<a href="/" class="site-menu__brand">{brandName}</a>
+			<button class="site-menu__close" type="button" aria-label="Close menu" data-menu-close>
+				<svg viewBox="0 0 24 24" aria-hidden="true">
+					<line x1="6" y1="6" x2="18" y2="18"></line>
+					<line x1="18" y1="6" x2="6" y2="18"></line>
+				</svg>
+			</button>
+		</div>
+		{sidePanelGroups.map((group, idx) => (
+			<>
+				<h2 class={idx === 0 ? 'site-menu__h' : 'site-menu__h'} id={idx === 0 ? 'site-menu-heading' : undefined}>
+					{group.label}
+				</h2>
+				<ul class="site-menu__list">
+					{group.children.map((child) => (
+						<li>
+							<a href={child.href}>{child.label}</a>
+						</li>
+					))}
+				</ul>
+			</>
+		))}
+		<h2 class="site-menu__h" id={sidePanelGroups.length === 0 ? 'site-menu-heading' : undefined}>Categories</h2>
+		<ul class="site-menu__list">
+			{categoriesForSidePanel.map((cat) => (
+				<li>
+					<a href={`/category/${cat.slug}/`}>{cat.name}</a>
+				</li>
+			))}
+		</ul>
+		<h2 class="site-menu__h">Subscribe</h2>
+		<ul class="site-menu__list">
+			<li><a href="/rss.xml">RSS feed</a></li>
+		</ul>
+	</div>
+</aside>
+
+<style>
+	/* ---------- Header chrome ---------- */
+
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 50;
+		background: var(--bg-header);
+		backdrop-filter: blur(12px);
+		border-bottom: 1px solid var(--border);
+	}
+
+	.site-header__top {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		/* Only vertical padding here — horizontal padding comes from the
+		   .container class on the same element. Using the shorthand would
+		   silently zero out the container's gutter, making the hamburger
+		   and theme toggle touch the screen edge on narrow viewports. */
+		padding-block: 0.85rem;
+	}
+
+	.site-header__hamburger {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		padding: 0;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		color: var(--text-dim);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+	}
+
+	.site-header__hamburger:hover {
+		color: var(--text);
+		border-color: var(--text-muted);
+		background: var(--bg-elev);
+	}
+
+	.site-header__hamburger:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.site-header__hamburger svg {
+		width: 18px;
+		height: 18px;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		fill: none;
+	}
+
+	.site-header__logo {
+		font-family: var(--font-display);
+		font-weight: 900;
+		font-size: 1.35rem;
+		letter-spacing: -0.02em;
+		text-transform: uppercase;
+		color: var(--text);
+		flex-shrink: 0;
+		margin-right: auto;
+		text-decoration: none;
+	}
+
+	.site-header__logo span {
+		color: var(--accent);
+	}
+
+	/* ---------- Primary nav (second row) ---------- */
+
+	.site-header__primary {
+		border-top: 1px solid var(--border);
+	}
+
+	.site-header__primary-inner {
+		display: flex;
+		justify-content: center;
+	}
+
+	.site-header__primary ul {
+		list-style: none;
+		margin: 0;
+		padding: 0.55rem 0;
+		display: flex;
+		gap: 2.5rem;
+		flex-wrap: wrap;
+		justify-content: center;
+	}
+
+	.site-header__primary a {
+		color: var(--text-dim);
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		text-decoration: none;
+		padding: 0.15rem 0;
+		border-bottom: 2px solid transparent;
+		transition: color 120ms ease, border-color 120ms ease;
+	}
+
+	.site-header__primary a:hover,
+	.site-header__primary a:focus-visible {
+		color: var(--accent);
+		border-bottom-color: var(--accent);
+		outline: none;
+	}
+
+	.site-header__primary li.has-dropdown {
+		position: relative;
+	}
+
+	/* Dropdown trigger button — visually matches the regular nav links. */
+	.primary-nav__trigger {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.4rem;
+		background: transparent;
+		border: 0;
+		padding: 0.15rem 0;
+		margin: 0;
+		font: inherit;
+		color: var(--text-dim);
+		font-size: 0.82rem;
+		font-weight: 700;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		cursor: pointer;
+		border-bottom: 2px solid transparent;
+		transition: color 120ms ease, border-color 120ms ease;
+	}
+
+	.primary-nav__trigger:hover,
+	.primary-nav__trigger:focus-visible,
+	.primary-nav__trigger[aria-expanded='true'] {
+		color: var(--accent);
+		border-bottom-color: var(--accent);
+		outline: none;
+	}
+
+	.primary-nav__chevron {
+		width: 10px;
+		height: 7px;
+		flex-shrink: 0;
+		transition: transform 150ms ease;
+	}
+
+	.primary-nav__trigger[aria-expanded='true'] .primary-nav__chevron {
+		transform: rotate(180deg);
+	}
+
+	.primary-nav__dropdown {
+		position: absolute;
+		top: 100%;
+		left: 50%;
+		transform: translateX(-50%) translateY(-6px);
+		margin: 0.5rem 0 0;
+		min-width: 220px;
+		background: var(--bg);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 0.35rem;
+		list-style: none;
+		box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+		opacity: 0;
+		visibility: hidden;
+		pointer-events: none;
+		transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
+		z-index: 10;
+		/* Override the .site-header__primary ul descendant rule above —
+		   the dropdown should be a vertical block, not a horizontal flex
+		   with the 2.5rem gap meant for the top-level nav items. */
+		display: block;
+		gap: 0;
+	}
+
+	.primary-nav__trigger[aria-expanded='true'] + .primary-nav__dropdown {
+		opacity: 1;
+		visibility: visible;
+		pointer-events: auto;
+		transform: translateX(-50%) translateY(0);
+	}
+
+	.primary-nav__dropdown li {
+		list-style: none;
+	}
+
+	.primary-nav__dropdown a {
+		display: block;
+		padding: 0.55rem 0.85rem;
+		color: var(--text);
+		font-size: 0.85rem;
+		font-weight: 600;
+		text-transform: none;
+		letter-spacing: 0;
+		text-decoration: none;
+		border-radius: 3px;
+		border-bottom: 0;
+		transition: background 120ms ease, color 120ms ease;
+	}
+
+	.primary-nav__dropdown a:hover,
+	.primary-nav__dropdown a:focus-visible {
+		background: var(--bg-elev);
+		color: var(--accent);
+		border-bottom: 0;
+		outline: none;
+	}
+
+	@media (max-width: 600px) {
+		.site-header__primary ul {
+			gap: 1.5rem;
+		}
+		.site-header__primary a,
+		.primary-nav__trigger {
+			font-size: 0.75rem;
+		}
+	}
+
+	/* ---------- Theme toggle (right side of top bar) ---------- */
+
+	.theme-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 36px;
+		height: 36px;
+		padding: 0;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		color: var(--text-dim);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+	}
+
+	.theme-toggle:hover {
+		color: var(--text);
+		border-color: var(--text-muted);
+		background: var(--bg-elev);
+	}
+
+	.theme-toggle:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+
+	.theme-toggle__icon {
+		width: 18px;
+		height: 18px;
+		display: block;
+	}
+
+	:root[data-theme='light'] .theme-toggle__icon--sun {
+		display: none;
+	}
+	:root:not([data-theme='light']) .theme-toggle__icon--moon {
+		display: none;
+	}
+
+	/* ---------- Side-panel menu ---------- */
+
+	.site-menu {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		pointer-events: none;
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 200ms ease, visibility 200ms ease;
+	}
+
+	.site-menu[aria-hidden='false'] {
+		pointer-events: auto;
+		opacity: 1;
+		visibility: visible;
+	}
+
+	.site-menu__backdrop {
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, 0.55);
+		border: 0;
+		cursor: pointer;
+		padding: 0;
+		margin: 0;
+	}
+
+	.site-menu__panel {
+		position: absolute;
+		top: 0;
+		left: 0;
+		bottom: 0;
+		width: 320px;
+		max-width: 88vw;
+		background: var(--bg);
+		border-right: 1px solid var(--border);
+		padding: 1.5rem 1.5rem 2rem;
+		overflow-y: auto;
+		transform: translateX(-100%);
+		transition: transform 250ms ease;
+	}
+
+	.site-menu[aria-hidden='false'] .site-menu__panel {
+		transform: none;
+	}
+
+	.site-menu__head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 1.5rem;
+	}
+
+	.site-menu__brand {
+		font-family: var(--font-display);
+		font-weight: 900;
+		font-size: 1.2rem;
+		letter-spacing: -0.02em;
+		text-transform: uppercase;
+		color: var(--text);
+		text-decoration: none;
+	}
+
+	.site-menu__brand span {
+		color: var(--accent);
+	}
+
+	.site-menu__close {
+		width: 36px;
+		height: 36px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		background: transparent;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		color: var(--text-dim);
+		cursor: pointer;
+		padding: 0;
+	}
+
+	.site-menu__close:hover {
+		color: var(--text);
+		border-color: var(--text-muted);
+		background: var(--bg-elev);
+	}
+
+	.site-menu__close svg {
+		width: 18px;
+		height: 18px;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		fill: none;
+	}
+
+	.site-menu__h {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.14em;
+		color: var(--text-dim);
+		font-weight: 800;
+		margin: 1.5rem 0 0.5rem;
+	}
+
+	.site-menu__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+	}
+
+	.site-menu__list a {
+		display: block;
+		padding: 0.7rem 0;
+		color: var(--text);
+		text-decoration: none;
+		border-bottom: 1px solid var(--border);
+		font-size: 0.95rem;
+		font-weight: 500;
+		transition: color 120ms ease;
+	}
+
+	.site-menu__list a:hover,
+	.site-menu__list a:focus-visible {
+		color: var(--accent);
+		outline: none;
+	}
+</style>
+
+<script>
+	// ---------- Side-panel menu open/close ----------
+	const menuButton = document.querySelector<HTMLButtonElement>('[data-nav-toggle]');
+	const menu = document.getElementById('site-menu');
+
+	function openMenu() {
+		if (!menu || !menuButton) return;
+		menu.setAttribute('aria-hidden', 'false');
+		menuButton.setAttribute('aria-expanded', 'true');
+		document.body.style.overflow = 'hidden';
+	}
+
+	function closeMenu() {
+		if (!menu || !menuButton) return;
+		menu.setAttribute('aria-hidden', 'true');
+		menuButton.setAttribute('aria-expanded', 'false');
+		document.body.style.overflow = '';
+		menuButton.focus();
+	}
+
+	menuButton?.addEventListener('click', openMenu);
+
+	for (const el of document.querySelectorAll<HTMLElement>('[data-menu-close]')) {
+		el.addEventListener('click', closeMenu);
+	}
+
+	document.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape' && menu?.getAttribute('aria-hidden') === 'false') {
+			closeMenu();
+		}
+	});
+
+	// ---------- Primary-nav dropdowns ----------
+	const dropdownTriggers = document.querySelectorAll<HTMLButtonElement>(
+		'[data-dropdown-trigger]',
+	);
+
+	function closeAllDropdowns(except?: HTMLButtonElement) {
+		for (const t of dropdownTriggers) {
+			if (t !== except) t.setAttribute('aria-expanded', 'false');
+		}
+	}
+
+	for (const trigger of dropdownTriggers) {
+		trigger.addEventListener('click', (e) => {
+			e.stopPropagation();
+			const expanded = trigger.getAttribute('aria-expanded') === 'true';
+			closeAllDropdowns(trigger);
+			trigger.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+		});
+	}
+
+	// Click outside any open dropdown → close them all. The has-dropdown
+	// container is checked via closest() so clicks inside the dropdown
+	// panel itself (e.g. on a link) don't immediately close before the
+	// navigation fires.
+	document.addEventListener('click', (e) => {
+		const target = e.target as Element | null;
+		if (target && target.closest('.has-dropdown')) return;
+		closeAllDropdowns();
+	});
+
+	document.addEventListener('keydown', (e) => {
+		if (e.key === 'Escape') {
+			const anyOpen = Array.from(dropdownTriggers).some(
+				(t) => t.getAttribute('aria-expanded') === 'true',
+			);
+			if (anyOpen) {
+				closeAllDropdowns();
+				// Restore focus to the most-recently-opened trigger if it had focus.
+				const lastOpen = Array.from(dropdownTriggers).find(
+					(t) => t === document.activeElement,
+				);
+				lastOpen?.focus();
+			}
+		}
+	});
+
+	// ---------- Theme toggle ----------
+	const themeToggle = document.querySelector<HTMLButtonElement>('[data-theme-toggle]');
+	if (themeToggle) {
+		const updateLabel = () => {
+			const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+			themeToggle.setAttribute(
+				'aria-label',
+				current === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
+			);
+		};
+		updateLabel();
+		themeToggle.addEventListener('click', () => {
+			const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+			const next = current === 'dark' ? 'light' : 'dark';
+			document.documentElement.dataset.theme = next;
+			try {
+				localStorage.setItem('theme', next);
+			} catch {
+				// localStorage can throw in private mode — fine, theme just won't persist.
+			}
+			updateLabel();
+		});
+	}
+</script>

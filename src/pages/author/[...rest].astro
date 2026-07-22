@@ -1,0 +1,113 @@
+---
+import Base from '../../layouts/Base.astro';
+import OverlayCard from '../../components/OverlayCard.astro';
+import Pagination from '../../components/Pagination.astro';
+import { getAuthorBundle } from '../../lib/wp';
+
+// URL shapes supported:
+//   /author/<slug>/                  → live page (newest 10..19)
+//   /author/<slug>/page/N/           → sealed page N (1-indexed, oldest first)
+//
+// Author archives go through the /staticq/v1/archive bundle endpoint
+// with author_slug — the plugin resolves the slug via get_user_by()
+// in PHP, sidestepping the wp/v2/users endpoint which AIOSEO and
+// similar security plugins block under aios_user_lists_forbidden.
+// The response bundles author info + posts + layout + Rank Math head
+// in a single roundtrip.
+
+const { rest } = Astro.params;
+const segments = (rest ?? '').split('/').filter((s) => s.length > 0);
+if (segments.length === 0) {
+	return Astro.rewrite('/404');
+}
+
+// Detect optional `…/page/N` suffix.
+let pageNum: number | null = null;
+let slugSegments = segments;
+if (segments.length >= 2 && segments[segments.length - 2] === 'page') {
+	const n = Number(segments[segments.length - 1]);
+	if (!Number.isFinite(n) || n < 1) {
+		return Astro.rewrite('/404');
+	}
+	pageNum = n;
+	slugSegments = segments.slice(0, -2);
+}
+
+// Author URLs are single-segment (slug). Anything deeper isn't an author URL.
+if (slugSegments.length !== 1) {
+	return Astro.rewrite('/404');
+}
+
+const slug = slugSegments[0];
+const bundle = await getAuthorBundle(slug, pageNum);
+if (!bundle) {
+	return Astro.rewrite('/404');
+}
+const { author, posts, layout, seoHead } = bundle;
+
+if (pageNum !== null && pageNum > layout.sealedPagesCount) {
+	return Astro.rewrite('/404');
+}
+
+const baseUrl = `/author/${author.slug}/`;
+const isLive = pageNum === null;
+const titleSuffix = isLive ? '' : ` — Older posts (${pageNum})`;
+const labelSuffix = isLive ? '' : ` · Older (${pageNum})`;
+const totalPosts = layout.totalPosts;
+const countLabel = totalPosts === 1 ? '1 article' : `${totalPosts} articles`;
+---
+
+<Base
+	title={`${author.name}${titleSuffix}`}
+	description={author.description || `Articles by ${author.name}`}
+	seoHead={seoHead}
+>
+	<section class="cat-hero">
+		<div class="cat-hero__label">Author{labelSuffix}</div>
+		<h1 class="cat-hero__title">{author.name}</h1>
+		{author.description && (
+			<p class="cat-hero__desc">{author.description}</p>
+		)}
+		<div class="cat-hero__count">{countLabel}</div>
+	</section>
+
+	{posts.length === 0 ? (
+		<p class="cat-empty">No posts by this author yet.</p>
+	) : (
+		<div class="cat-grid">
+			{posts.map((post) => (
+				<OverlayCard post={post} size="md" />
+			))}
+		</div>
+	)}
+
+	<Pagination current={pageNum} sealedCount={layout.sealedPagesCount} baseUrl={baseUrl} />
+</Base>
+
+<style>
+	.cat-hero__count {
+		margin-top: 0.65rem;
+		color: var(--text-muted, #6b7280);
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	.cat-grid {
+		display: grid;
+		gap: 1.25rem;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+	}
+
+	@media (min-width: 1100px) {
+		.cat-grid {
+			grid-template-columns: repeat(4, 1fr);
+		}
+	}
+
+	.cat-empty {
+		color: var(--text-dim, #a1a7b0);
+		margin: 2rem 0;
+	}
+</style>

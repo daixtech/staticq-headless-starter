@@ -1,0 +1,113 @@
+---
+import { WP_BASE_URL } from '../lib/wp';
+
+// Hierarchical breadcrumb for WP page routes ([slug].astro WP-page
+// branch + [...rest].astro). Renders both the visual nav and a
+// matching BreadcrumbList JSON-LD block.
+//
+// The last item in `crumbs` is treated as the current page: no link
+// in the visual nav, no `item` URL in the schema (per Google's
+// breadcrumb structured-data guidelines).
+//
+// JSON-LD `item` URLs use WP_BASE_URL (www.example.com) to stay
+// in lockstep with the canonical URLs Rank Math emits for each page.
+// Visual nav uses root-relative hrefs so visitors stay on the
+// headless host while navigating.
+
+export interface BreadcrumbItem {
+	name: string;
+	// Root-relative href, e.g. "/" or "/docs/specs/".
+	// Required for every item except the last (current page) — but
+	// safe to pass for the current page; it just isn't used.
+	href: string;
+}
+
+interface Props {
+	crumbs: BreadcrumbItem[];
+}
+
+const { crumbs } = Astro.props;
+
+function decodeEntities(s: string): string {
+	return s
+		.replace(/&amp;/g, '&')
+		.replace(/&lt;/g, '<')
+		.replace(/&gt;/g, '>')
+		.replace(/&quot;/g, '"')
+		.replace(/&#0?39;|&apos;/g, "'")
+		.replace(/&#8217;/g, '’')
+		.replace(/&#8216;/g, '‘')
+		.replace(/&#8220;/g, '“')
+		.replace(/&#8221;/g, '”')
+		.replace(/&nbsp;/g, ' ');
+}
+
+const base = (WP_BASE_URL || '').replace(/\/$/, '');
+
+const jsonLd = {
+	'@context': 'https://schema.org',
+	'@type': 'BreadcrumbList',
+	itemListElement: crumbs.map((c, i) => {
+		const item: Record<string, unknown> = {
+			'@type': 'ListItem',
+			position: i + 1,
+			name: decodeEntities(c.name),
+		};
+		// Omit `item` on the last entry per schema.org guidance.
+		if (i < crumbs.length - 1 && base) {
+			item.item = `${base}${c.href}`;
+		}
+		return item;
+	}),
+};
+---
+
+<nav class="page-crumbs" aria-label="Breadcrumb">
+	{crumbs.map((c, i) => {
+		const isLast = i === crumbs.length - 1;
+		return (
+			<>
+				{i > 0 && <span class="page-crumbs__sep" aria-hidden="true">/</span>}
+				{isLast ? (
+					<span class="page-crumbs__current" aria-current="page" set:html={c.name} />
+				) : (
+					<a class="page-crumbs__link" href={c.href} set:html={c.name} />
+				)}
+			</>
+		);
+	})}
+</nav>
+
+<script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+
+<style>
+	.page-crumbs {
+		font-size: 0.78rem;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		color: var(--text-muted, #6b7280);
+		margin-bottom: 1.25rem;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.35rem;
+		align-items: center;
+	}
+
+	.page-crumbs__link {
+		color: var(--text-dim, #a1a7b0);
+		text-decoration: none;
+	}
+
+	.page-crumbs__link:hover {
+		color: var(--accent, #e63946);
+	}
+
+	.page-crumbs__sep {
+		color: var(--text-muted, #6b7280);
+		opacity: 0.6;
+	}
+
+	.page-crumbs__current {
+		color: var(--text-muted, #6b7280);
+	}
+</style>

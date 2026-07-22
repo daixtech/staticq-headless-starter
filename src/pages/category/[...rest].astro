@@ -1,0 +1,243 @@
+---
+import Base from '../../layouts/Base.astro';
+import StackedCard from '../../components/StackedCard.astro';
+import Pagination from '../../components/Pagination.astro';
+import CategoryHeroStrip from '../../components/CategoryHeroStrip.astro';
+import CategoryChildrenNav from '../../components/CategoryChildrenNav.astro';
+import Breadcrumb from '../../components/Breadcrumb.astro';
+import {
+	getCategories,
+	getCategoryArchive,
+	getCategoryBySlug,
+	getCategoryHeroPosts,
+	getDirectChildren,
+	type WPCategory,
+	type HeroSlot,
+} from '../../lib/wp';
+import { buildCategoryChain } from '../../lib/breadcrumb';
+
+// URL shapes supported (depth-agnostic):
+//   /category/foo/                     → live page, slug = foo
+//   /category/foo/page/N/              → sealed N, slug = foo
+//   /category/parent/child/            → live page, slug = child
+//   /category/parent/child/page/N/     → sealed N, slug = child
+//   /category/a/b/c/                   → live page, slug = c
+//   /category/a/b/c/page/N/            → sealed N, slug = c
+//
+// WordPress generates hierarchical category permalinks (parent/child/...)
+// for nested categories. The prior `[slug]/[...page]` route only matched
+// the flat single-slug shape and 404'd everything nested. WP category
+// slugs are unique site-wide regardless of nesting, so we resolve the
+// deepest non-pagination segment and then 301-redirect to the canonical
+// parent chain when the incoming URL doesn't already match it — same
+// behavior as WordPress's own permalink resolver, and prevents Google
+// from indexing two different URLs for the same archive.
+
+const { rest } = Astro.params;
+const restRaw = rest ?? '';
+
+// Split into non-empty segments (drops both leading and trailing /).
+const segments = restRaw.split('/').filter((s) => s.length > 0);
+if (segments.length === 0) {
+	return Astro.rewrite('/404');
+}
+
+// Detect optional `…/page/N` suffix.
+let pageNum: number | null = null;
+let slugSegments = segments;
+if (segments.length >= 2 && segments[segments.length - 2] === 'page') {
+	const n = Number(segments[segments.length - 1]);
+	if (!Number.isFinite(n) || n < 1) {
+		return Astro.rewrite('/404');
+	}
+	pageNum = n;
+	slugSegments = segments.slice(0, -2);
+}
+
+if (slugSegments.length === 0) {
+	return Astro.rewrite('/404');
+}
+
+// Resolve by the deepest segment. Use the direct single-slug lookup (one
+// fast REST call) for the existence check. The full categories list is
+// only consulted for the canonical-chain walk below — and walking 614+
+// categories across 7 paginated requests is unreliable enough on this
+// origin that we MUST NOT depend on it for the lookup itself.
+const slug = slugSegments[slugSegments.length - 1];
+const [category, cats] = await Promise.all([
+	getCategoryBySlug(slug),
+	getCategories().catch(() => [] as WPCategory[]),
+]);
+if (!category) {
+	return Astro.rewrite('/404');
+}
+
+// Best-effort canonical parent-chain walk. If a parent ID exists in the
+// resolved category but isn't in the cached list (paginated walk dropped
+// a page, or the cache is still cold), we stop and treat the chain as
+// incomplete — meaning we can't be sure of the canonical URL and so
+// won't redirect. Better to render at the requested URL than to redirect
+// to a wrong one. The `guard` set defends against pathological loops.
+const byId = new Map<number, WPCategory>(cats.map((c) => [c.id, c]));
+const chain: string[] = [];
+let chainComplete = false;
+{
+	let cur: WPCategory | undefined = category;
+	const guard = new Set<number>();
+	while (cur && !guard.has(cur.id)) {
+		guard.add(cur.id);
+		chain.unshift(cur.slug);
+		if (!cur.parent || cur.parent === 0) {
+			chainComplete = true;
+			break;
+		}
+		const parentCat = byId.get(cur.parent);
+		if (!parentCat) {
+			// Parent id is non-zero but isn't in the cached list — chain
+			// resolution is incomplete; skip the redirect.
+			break;
+		}
+		cur = parentCat;
+	}
+}
+
+const canonicalBase = `/category/${chain.join('/')}/`;
+const incomingBase = `/category/${slugSegments.join('/')}/`;
+
+// Only redirect when we have a complete chain AND it differs from the
+// requested URL. Two consequences:
+// 1. /category/abt/ with full chain → 301 → /category/guides/setup/.
+// 2. /category/abt/ with cold/partial chain → renders at /category/abt/.
+//    Marginal SEO cost (two URLs, same content) but the page works.
+if (chainComplete && canonicalBase !== incomingBase) {
+	const redirectTarget = pageNum !== null
+		? `${canonicalBase}page/${pageNum}/`
+		: canonicalBase;
+	return Astro.redirect(redirectTarget, 301);
+}
+
+// Determine layout: leaf categories (no children) under model-shaped roots
+// get a hero strip on page 1 (top 3-4 posts by purpose tag — Overview /
+// Guide / Specs / Pictures). Parent categories get a sub-category chip
+// list instead. See doc/taxonomy-audit.md §2.2 for the eligibility
+// rules. Hero is page-1 only — pagination drops the strip and excludes
+// the hero post IDs from the main grid on EVERY page so the grid never
+// re-shows them.
+const directChildren = getDirectChildren(category.id, cats);
+const isLeaf = directChildren.length === 0;
+
+let heroPosts: HeroSlot[] = [];
+if (isLeaf && pageNum === null) {
+	heroPosts = await getCategoryHeroPosts(category, cats);
+}
+const heroPostIds = heroPosts.map((h) => h.post.id);
+
+const { posts, layout, seoHead } = await getCategoryArchive(
+	Number(category.id),
+	pageNum,
+	heroPostIds,
+);
+
+if (pageNum !== null && pageNum > layout.sealedPagesCount) {
+	return Astro.rewrite('/404');
+}
+
+// Pagination links must use the URL the visitor actually landed on —
+// if the chain was incomplete and we didn't redirect, sealed-page links
+// off this archive should preserve the same prefix.
+const baseUrl = incomingBase;
+const isLive = pageNum === null;
+const titleSuffix = isLive ? '' : ` — Older posts (${pageNum})`;
+const labelSuffix = isLive ? '' : ` · Older (${pageNum})`;
+// Count shown in the header. `category.count` only reflects posts
+// DIRECTLY assigned to this category — on a parent like
+// /category/models/diablo/diablo-specials/ that's just 18, hiding the
+// ~40 posts rolled up from descendants. Use `layout.totalPosts`
+// which is the same number that powers pagination; add the hero
+// posts back (they were excluded from layout.totalPosts via the
+// &exclude= REST param) so the headline reflects the true total.
+const totalArticles = layout.totalPosts + heroPosts.length;
+const countLabel = totalArticles === 1 ? '1 article' : `${totalArticles} articles`;
+
+// Breadcrumb chain — walked from the cached categories list. Feeds both
+// the visible nav above the H1 and the BreadcrumbList JSON-LD (emitted by
+// Base's SEOJsonLd on the hand-rolled fallback), so visible + semantic
+// always agree.
+const breadcrumbItems = buildCategoryChain(category, cats);
+---
+
+<Base
+	title={`${category.name}${titleSuffix}`}
+	description={category.description || `Posts in the ${category.name} category`}
+	breadcrumb={breadcrumbItems}
+	seoHead={seoHead}
+>
+	<section class="cat-hero">
+		<Breadcrumb items={breadcrumbItems} />
+		<div class="cat-hero__label">Category{labelSuffix}</div>
+		<h1 class="cat-hero__title">{category.name}</h1>
+		{category.description && (
+			<p class="cat-hero__desc">{category.description}</p>
+		)}
+		<div class="cat-hero__count">{countLabel}</div>
+	</section>
+
+	{/* Leaf hero strip — only on page 1, only when posts matched.
+	  * Component self-hides when heroPosts is empty. */}
+	{heroPosts.length > 0 && (
+		<CategoryHeroStrip heroPosts={heroPosts} />
+	)}
+
+	{/* Parent sub-category nav — replaces the hero strip for parents. */}
+	{!isLeaf && (
+		<CategoryChildrenNav children={directChildren} parentName={category.name} />
+	)}
+
+	{posts.length === 0 ? (
+		<p class="cat-empty">No posts in this category yet.</p>
+	) : (
+		<div class="cat-grid">
+			{posts.map((post) => (
+				<StackedCard
+					post={post}
+					size="md"
+					kickerOverride={{ name: category.name, slug: category.slug }}
+				/>
+			))}
+		</div>
+	)}
+
+	<Pagination current={pageNum} sealedCount={layout.sealedPagesCount} baseUrl={baseUrl} />
+</Base>
+
+<style>
+	.cat-hero__count {
+		margin-top: 0.65rem;
+		color: var(--text-muted, #6b7280);
+		font-size: 0.78rem;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	/* Card grid: a comfortable 2–3 column layout. Wider cards leave
+	 * room for the subtitle line, wired through OverlayCard /
+	 * StackedCard. 320px minimum keeps cards legible on tablet without
+	 * dropping to a stacked column. */
+	.cat-grid {
+		display: grid;
+		gap: 1.5rem;
+		grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+	}
+
+	@media (min-width: 1100px) {
+		.cat-grid {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+
+	.cat-empty {
+		color: var(--text-dim, #a1a7b0);
+		margin: 2rem 0;
+	}
+</style>

@@ -1,0 +1,74 @@
+---
+// Renders a <picture> element with a full srcset built from every variant
+// registered in WP's `media_details.sizes`. Emits a `<source type="image/webp">`
+// using URL-derived WebP paths (the staticq-media plugin produces these at
+// predictable URLs); the browser transparently falls back to the JPG
+// fallback inside <img> if a WebP 404s.
+//
+// The caller is expected to pass a sensible `sizes` attribute so the
+// browser picks the right variant — see the call sites in OverlayCard /
+// ArticleHero / LatestRail for examples.
+
+import type { ResponsiveImageData } from '../lib/wp';
+
+interface Props {
+	image: ResponsiveImageData;
+	sizes?: string;
+	loading?: 'lazy' | 'eager';
+	fetchpriority?: 'high' | 'low' | 'auto';
+	class?: string;
+	altOverride?: string;
+}
+
+const {
+	image,
+	sizes = '100vw',
+	loading = 'lazy',
+	fetchpriority,
+	class: className,
+	altOverride,
+} = Astro.props;
+
+const alt = altOverride ?? image.alt;
+
+const webpSrcset = image.variants.map((v) => `${v.webp} ${v.width}w`).join(', ');
+const jpgSrcset = image.variants.map((v) => `${v.src} ${v.width}w`).join(', ');
+---
+
+<picture class={className}>
+	<source type="image/webp" srcset={webpSrcset} sizes={sizes} />
+	<img
+		src={image.src}
+		srcset={jpgSrcset}
+		sizes={sizes}
+		width={image.width || undefined}
+		height={image.height || undefined}
+		alt={alt}
+		loading={loading}
+		decoding="async"
+		fetchpriority={fetchpriority}
+	/>
+</picture>
+
+<style>
+	/*
+	 * Default behaviour: fill the containing element with object-fit: cover.
+	 * That matches every current consumer (overlay card media area, hero
+	 * full-bleed, rail thumbnail). Parent can override via the `class` prop
+	 * and :global(picture) / :global(img) selectors if it needs different
+	 * layout (e.g. inline article body images).
+	 */
+	picture {
+		display: block;
+		width: 100%;
+		height: 100%;
+		overflow: hidden;
+	}
+
+	picture img {
+		display: block;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+</style>

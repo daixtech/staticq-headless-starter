@@ -1,0 +1,26 @@
+---
+import Base from '../layouts/Base.astro';
+
+// Set the HTTP status here so the response carries 404 in two cases:
+//   1. Astro's built-in fall-through when no route matches a URL.
+//   2. Other routes that explicitly `return Astro.rewrite('/404')` when
+//      their lookup misses — without this assignment those rewrites
+//      would emit the 404 body with a 200 status, which the middleware
+//      would then cache as a regular page (very wrong) and which would
+//      give Google a soft-404.
+Astro.response.status = 404;
+---
+
+<Base title="Page not found" description="That page does not exist." noIndex skipSeoHead>
+	<section class="notfound">
+		<div class="notfound__code">404</div>
+		<h1 class="notfound__title">Page not found</h1>
+		<p class="notfound__body">
+			The page you're looking for has moved, been retired, or never existed.
+		</p>
+		<div class="notfound__actions">
+			<a href="/" class="btn">Go home</a>
+			<a href="/rss.xml" class="btn btn--ghost">Subscribe to RSS</a>
+		</div>
+	</section>
+</Base>

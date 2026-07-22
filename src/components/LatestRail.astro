@@ -1,0 +1,154 @@
+---
+import type { WPPost } from '../lib/wp';
+import { formatDate, getPrimaryCategory, getResponsiveImage } from '../lib/wp';
+import ResponsiveImage from './ResponsiveImage.astro';
+
+interface Props {
+	posts: WPPost[];
+	title?: string;
+	limit?: number;
+}
+
+const { posts, title = 'Latest', limit = 4 } = Astro.props;
+const items = posts.slice(0, limit);
+---
+
+{items.length > 0 && (
+	<aside class="rail">
+		<h2 class="rail__title">{title}</h2>
+		<ol class="rail__list">
+			{items.map((post) => {
+				const image = getResponsiveImage(post, 'medium');
+				const cat = getPrimaryCategory(post);
+				const href = `/${post.slug}/`;
+				return (
+					<li class="rail__item">
+						<div class="rail__text">
+							{cat && (
+								<a href={`/category/${cat.slug}/`} class="rail__kicker">{cat.name}</a>
+							)}
+							<h3 class="rail__h">
+								<a href={href} class="rail__link" set:html={post.title.rendered} />
+							</h3>
+							<time class="rail__date">{formatDate(post.date)}</time>
+						</div>
+						<a href={href} class="rail__thumb" aria-hidden="true" tabindex="-1">
+							{image ? (
+								<ResponsiveImage image={image} sizes="110px" loading="lazy" />
+							) : (
+								<span class="rail__placeholder"></span>
+							)}
+						</a>
+					</li>
+				);
+			})}
+		</ol>
+	</aside>
+)}
+
+<style>
+	.rail {
+		background: transparent;
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.rail__title {
+		font-size: 0.78rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.14em;
+		color: var(--text, #f3f4f6);
+		margin: 0 0 0.25rem;
+		padding-bottom: 0.6rem;
+		border-bottom: 1px solid var(--border, #272c33);
+		text-align: center;
+	}
+
+	.rail__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.rail__item {
+		display: grid;
+		grid-template-columns: 1fr 110px;
+		gap: 0.85rem;
+		padding: 0.8rem 0;
+		border-bottom: 1px solid var(--border, #272c33);
+		align-items: center;
+	}
+
+	.rail__item:last-child {
+		border-bottom: 0;
+	}
+
+	.rail__text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.3rem;
+		min-width: 0;
+	}
+
+	.rail__kicker {
+		color: var(--accent, #e63946);
+		font-size: 0.6rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		text-decoration: none;
+		align-self: flex-start;
+	}
+
+	.rail__kicker:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.rail__h {
+		font-size: 0.93rem;
+		line-height: 1.25;
+		font-weight: 700;
+		margin: 0;
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	.rail__link {
+		color: var(--text, #f3f4f6);
+		text-decoration: none;
+	}
+
+	.rail__link:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.rail__date {
+		color: var(--text-muted, #6b7280);
+		font-size: 0.72rem;
+	}
+
+	.rail__thumb {
+		display: block;
+		width: 110px;
+		height: 70px;
+		overflow: hidden;
+		border-radius: var(--radius, 4px);
+		background: var(--bg-elev, #161a1f);
+		flex-shrink: 0;
+	}
+
+	/* Image fill / object-fit handled inside ResponsiveImage. */
+
+	.rail__placeholder {
+		display: block;
+		width: 100%;
+		height: 100%;
+		background: var(--bg-elev, #161a1f);
+	}
+</style>

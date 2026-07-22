@@ -1,0 +1,49 @@
+# Local environment — keep your WP origin URL, cookies, etc. out
+# of the public repo. .env.example is committed as the template.
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.astro/
+.vercel/
+.netlify/
+.wrangler/
+
+# Misc
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / editor
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# AI coding assistants — per-machine session/state, never commit.
+# These often contain conversation transcripts, code the assistant
+# read into context (potentially private), and memory notes — none
+# of which belong on a public repo. Add new tools here as you
+# adopt them; the pattern is per-tool and per-machine.
+.claude/
+.codex/
+.cursor/
+.windsurf/
+.continue/
+.aider*
+.github-copilot/
+.copilot/
+# NOTE: leave CLAUDE.md and AGENTS.md TRACKED on purpose — those
+# are project-level docs consumed by the assistant and typically
+# useful for the whole team, unlike the state dirs above.

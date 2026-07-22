@@ -1,0 +1,107 @@
+---
+import type { WPPost } from '../lib/wp';
+import type { HeadingInfo } from '../lib/html';
+import LatestRail from './LatestRail.astro';
+
+interface Props {
+	headings: HeadingInfo[];
+	relatedPosts: WPPost[];
+	relatedTitle?: string;
+}
+
+const { headings, relatedPosts, relatedTitle = 'More from this category' } = Astro.props;
+const showToc = headings.length >= 3;
+---
+
+<aside class="asidebar">
+	<div class="asidebar__inner">
+		{showToc && (
+			<nav class="toc" aria-label="Table of contents">
+				<h2 class="toc__title">In this article</h2>
+				<ol class="toc__list">
+					{headings.map((h) => (
+						<li class={`toc__item toc__item--h${h.level}`}>
+							<a href={`#${h.id}`}>{h.text}</a>
+						</li>
+					))}
+				</ol>
+			</nav>
+		)}
+		{relatedPosts.length > 0 && (
+			<div class="asidebar__related">
+				<LatestRail posts={relatedPosts} title={relatedTitle} limit={5} />
+			</div>
+		)}
+	</div>
+</aside>
+
+<style>
+	.asidebar {
+		min-width: 0;
+	}
+
+	.asidebar__inner {
+		display: flex;
+		flex-direction: column;
+		gap: 2rem;
+	}
+
+	@media (min-width: 1000px) {
+		.asidebar__inner {
+			position: sticky;
+			top: 120px;
+			max-height: calc(100vh - 140px);
+			overflow-y: auto;
+			padding-right: 0.5rem;
+			scrollbar-width: thin;
+		}
+	}
+
+	.toc {
+		background: transparent;
+	}
+
+	.toc__title {
+		font-size: 0.78rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		letter-spacing: 0.14em;
+		margin: 0 0 0.85rem;
+		padding-bottom: 0.6rem;
+		border-bottom: 1px solid var(--border, #272c33);
+		color: var(--text, #f3f4f6);
+	}
+
+	.toc__list {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.55rem;
+	}
+
+	.toc__item a {
+		color: var(--text-dim, #a1a7b0);
+		font-size: 0.9rem;
+		line-height: 1.4;
+		text-decoration: none;
+		display: block;
+		padding: 0.25rem 0;
+		transition: color 120ms ease;
+	}
+
+	.toc__item a:hover {
+		color: var(--accent-hot, #ff5864);
+	}
+
+	.toc__item--h3 a {
+		padding-left: 0.85rem;
+		font-size: 0.85rem;
+		color: var(--text-muted, #6b7280);
+	}
+
+	.asidebar__related {
+		margin-top: 0.5rem;
+	}
+</style>
