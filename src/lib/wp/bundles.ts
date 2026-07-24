@@ -30,7 +30,7 @@ export async function getAuthorBundle(
 		params.set('author_slug', slug);
 		if (page !== null) params.set('page', String(page));
 		const url = `${WP_BASE_URL}/wp-json/staticq/v1/archive?${params.toString()}`;
-		const res = await fetch(url, { headers: wpBundleHeaders() });
+		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as {
 			posts: WPPost[];
@@ -87,7 +87,7 @@ export async function getSiteConfig(): Promise<SiteConfig | null> {
 		try {
 			if (!WP_BASE_URL) return null;
 			const url = `${WP_BASE_URL}/wp-json/staticq/v1/site-config`;
-			const res = await fetch(url, { headers: wpBundleHeaders() });
+			const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 			if (!res.ok) return null;
 			const data = (await res.json()) as SiteConfig;
 			// Minimal shape check — if the brand subobject is missing,
@@ -145,7 +145,7 @@ export async function getHomepageBundle(): Promise<HomepageBundle | null> {
 		try {
 			if (!WP_BASE_URL) return null;
 			const url = `${WP_BASE_URL}/wp-json/staticq/v1/homepage`;
-			const res = await fetch(url, { headers: wpBundleHeaders() });
+			const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 			if (!res.ok) return null;
 			const data = (await res.json()) as HomepageBundle;
 			// Minimal shape check — treat malformed responses as missing so
@@ -196,7 +196,7 @@ export async function getSingleBundle(slug: string): Promise<SingleBundle | null
 	try {
 		if (!WP_BASE_URL || !slug) return null;
 		const url = `${WP_BASE_URL}/wp-json/staticq/v1/single?slug=${encodeURIComponent(slug)}`;
-		const res = await fetch(url, { headers: wpBundleHeaders() });
+		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as SingleBundle;
 		if (
@@ -228,7 +228,7 @@ export async function getSitemapBundle(): Promise<SitemapBundle | null> {
 	try {
 		if (!WP_BASE_URL) return null;
 		const url = `${WP_BASE_URL}/wp-json/staticq/v1/sitemap`;
-		const res = await fetch(url, { headers: wpBundleHeaders() });
+		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as SitemapBundle;
 		if (
@@ -275,7 +275,7 @@ export async function getArchiveBundle(
 		if (args.includeDescendants) params.set('include_descendants', '1');
 		const qs = params.toString();
 		const url = `${WP_BASE_URL}/wp-json/staticq/v1/archive${qs ? `?${qs}` : ''}`;
-		const res = await fetch(url, { headers: wpBundleHeaders() });
+		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as {
 			posts: WPPost[];

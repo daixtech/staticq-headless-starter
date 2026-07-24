@@ -63,7 +63,7 @@ export async function getSeoHead(url: string): Promise<string | null> {
 		// "resolved, but no head"; a thrown/404 means "route missing".
 		try {
 			const endpoint = `${WP_BASE_URL}/wp-json/staticq/v1/seo-head?url=${encodeURIComponent(url)}`;
-			const res = await fetch(endpoint, { headers });
+			const res = await fetch(endpoint, { headers, cache: 'no-store' });
 			if (res.ok) {
 				const data = (await res.json()) as { seo_head?: string | null };
 				return typeof data?.seo_head === 'string' && data.seo_head.length > 0
@@ -79,7 +79,7 @@ export async function getSeoHead(url: string): Promise<string | null> {
 		// Legacy fallback: Rank Math's own getHead route.
 		try {
 			const endpoint = `${WP_BASE_URL}/wp-json/rankmath/v1/getHead?url=${encodeURIComponent(url)}`;
-			const res = await fetch(endpoint, { headers });
+			const res = await fetch(endpoint, { headers, cache: 'no-store' });
 			if (!res.ok) return null;
 			const data = (await res.json()) as { success?: boolean; head?: string };
 			if (!data?.success || typeof data?.head !== 'string' || data.head.length === 0) {

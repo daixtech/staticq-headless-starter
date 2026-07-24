@@ -39,7 +39,7 @@ export async function wpFetchRaw<T>(path: string): Promise<WpFetchResult<T>> {
 	if (existing) return existing;
 	const p = (async () => {
 		try {
-			const res = await fetch(url, { headers: wpBundleHeaders() });
+			const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 			if (!res.ok) {
 				const body = await res.text().catch(() => '');
 				const snippet = body.replace(/\s+/g, ' ').slice(0, 400);
