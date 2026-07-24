@@ -135,7 +135,14 @@ export async function getSiteConfig(): Promise<SiteConfig | null> {
 export async function getHomepageBundle(): Promise<HomepageBundle | null> {
 	try {
 		if (!WP_BASE_URL) return null;
-		const url = `${WP_BASE_URL}/wp-json/staticq/v1/homepage`;
+		// Cache-buster. Some WP hosts run an origin cache (Varnish / Nginx
+		// FastCGI) that caches bare REST URLs for anonymous requests. Every
+		// other bundle endpoint carries a query string (category_id, slug,
+		// page) and dodges it by accident; /homepage takes no params, so it's
+		// the one request that gets served stale to the (anonymous) Worker. A
+		// unique param per render keeps it fresh. The durable fix is to exclude
+		// /wp-json from that origin cache, after which this is belt-and-braces.
+		const url = `${WP_BASE_URL}/wp-json/staticq/v1/homepage?_cb=${Date.now()}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as HomepageBundle;
