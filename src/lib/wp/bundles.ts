@@ -116,13 +116,11 @@ export async function getSiteConfig(): Promise<SiteConfig | null> {
 // Homepage bundle (custom WP endpoint, optional).
 // ---------------------------------------------------------------------------
 
-// Per-isolate cache + in-flight dedup. The TTL only governs how often a
-// single isolate refetches; the receiver Worker's per-URL purge pipeline
-// invalidates the rendered HTML on the cache/middleware layer, which is
-// what propagates content updates to visitors. 60s matches site-config.
-const HOMEPAGE_BUNDLE_TTL_MS = 60_000;
-let homepageBundleCache: { value: HomepageBundle | null; expires: number } | null = null;
-let homepageBundleInflight: Promise<HomepageBundle | null> | null = null;
+// NO in-memory cache here. Module-level state persists across requests within
+// a Worker isolate, so a per-isolate TTL cache serves a STALE homepage — and
+// silently short-circuits before the fetch, defeating its cache:'no-store'.
+// Freshness and perf come from the page-level edge+R2 cache, which the
+// receiver Worker invalidates per URL on every edit.
 
 // One-shot fetch of the homepage payload (live posts + layout) from the WP
 // custom endpoint. Returns `null` when the endpoint is missing (404),
@@ -135,41 +133,28 @@ let homepageBundleInflight: Promise<HomepageBundle | null> | null = null;
 // implementation at staticq-headless/src/Rest/Endpoints.php for the batched
 // query plan.
 export async function getHomepageBundle(): Promise<HomepageBundle | null> {
-	const now = Date.now();
-	if (homepageBundleCache && homepageBundleCache.expires > now) {
-		return homepageBundleCache.value;
-	}
-	if (homepageBundleInflight) return homepageBundleInflight;
-
-	homepageBundleInflight = (async (): Promise<HomepageBundle | null> => {
-		try {
-			if (!WP_BASE_URL) return null;
-			const url = `${WP_BASE_URL}/wp-json/staticq/v1/homepage`;
-			const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
-			if (!res.ok) return null;
-			const data = (await res.json()) as HomepageBundle;
-			// Minimal shape check — treat malformed responses as missing so
-			// the caller's fallback path runs (rather than rendering an
-			// empty homepage on a partial response).
-			if (
-				!data
-				|| typeof data !== 'object'
-				|| !data.home_archive
-				|| !Array.isArray(data.home_archive.posts)
-				|| !data.home_archive.layout
-			) {
-				return null;
-			}
-			return data;
-		} catch {
+	try {
+		if (!WP_BASE_URL) return null;
+		const url = `${WP_BASE_URL}/wp-json/staticq/v1/homepage`;
+		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
+		if (!res.ok) return null;
+		const data = (await res.json()) as HomepageBundle;
+		// Minimal shape check — treat malformed responses as missing so the
+		// caller's fallback path runs (rather than rendering an empty homepage
+		// on a partial response).
+		if (
+			!data
+			|| typeof data !== 'object'
+			|| !data.home_archive
+			|| !Array.isArray(data.home_archive.posts)
+			|| !data.home_archive.layout
+		) {
 			return null;
 		}
-	})();
-
-	const value = await homepageBundleInflight;
-	homepageBundleCache = { value, expires: Date.now() + HOMEPAGE_BUNDLE_TTL_MS };
-	homepageBundleInflight = null;
-	return value;
+		return data;
+	} catch {
+		return null;
+	}
 }
 
 // ---------------------------------------------------------------------------
