@@ -3,6 +3,7 @@ import { env as workersEnv } from 'cloudflare:workers';
 import { pathToKey } from './lib/cache-key';
 import { envStr } from './lib/runtime-env';
 import { IS_STAGING } from './lib/worker-env';
+import { shouldPassThrough, passThroughToOrigin } from './lib/wp-passthrough';
 
 // 1 year — content is invalidated by explicit purges from the receiver
 // (Mode A), not by TTL expiry. s-maxage applies at the CF edge; max-age=0
@@ -54,6 +55,27 @@ let warnedMissingPagesBinding = false;
 // cache (the visitor still gets the cookies in the original response).
 export const onRequest = defineMiddleware(async (ctx, next) => {
 	const request = ctx.request;
+	const url = new URL(request.url);
+
+	// Preview host: the workers.dev URL used to review the site before going
+	// live. It runs on the PRODUCTION worker (same script), so IS_STAGING is
+	// false — but we must NOT read or write the edge/R2 cache for it. Preview
+	// renders would poison the real domain's cache (both layers key on path
+	// only, not host), and workers.dev can't be selectively purged (only a
+	// full-zone purge would clear it). So treat it like staging: fresh SSR
+	// every request, no cache read, no cache write, nothing to purge.
+	const isPreviewHost = url.hostname.endsWith('.workers.dev');
+
+	// Reverse-proxy passthrough. When this Worker runs on a route in front of
+	// the WordPress origin, the paths WordPress must own (admin, login, REST,
+	// cron, wp-content, feeds, sitemaps) and every write are forwarded to
+	// origin; Astro renders everything else. Runs before the visitor gate and
+	// the cache lookups so admin/login are always reachable and dynamic WP
+	// responses never get cached.
+	if (shouldPassThrough(request, url)) {
+		return passThroughToOrigin(request);
+	}
+
 	if (request.method !== 'GET' && request.method !== 'HEAD') {
 		return next();
 	}
@@ -81,8 +103,6 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 	const execCtx = (ctx.locals as { cfContext?: ExecutionContext }).cfContext;
 	const pages = (workersEnv as BoundEnv).PAGES;
 
-	const url = new URL(request.url);
-
 	// Reject any path ending in .html (case-insensitive). Astro's server-mode
 	// router treats /foo and /foo.html as the same route, so without this
 	// guard every post page is reachable under two URLs — bad for SEO
@@ -93,17 +113,16 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 		return next('/404');
 	}
 
-	// Staging early-exit. On the STAGING worker (WORKER_ENV=staging) the
-	// Worker acts as if no cache layers exist: every request renders
-	// fresh from SSR, with cache-control: no-store so no intermediary
-	// caches it either. Skips the cache.match / R2 lookups AND the
-	// cache.put / R2 writeback entirely — staging is for iteration,
-	// not throughput. CSS inlining still runs so staging looks
-	// pixel-identical to prod. Placed BEFORE the cache lookups so
-	// staging never reads from or writes to either layer. The
-	// production worker never takes this branch, whatever
-	// SITE_INDEXABLE says — indexability and caching are independent.
-	if (IS_STAGING) {
+	// No-cache early-exit. Two cases act as if no cache layers exist — the
+	// STAGING worker (WORKER_ENV=staging) and any request on the workers.dev
+	// PREVIEW host: every request renders fresh from SSR, with cache-control:
+	// no-store so no intermediary caches it either. Skips the cache.match / R2
+	// lookups AND the cache.put / R2 writeback entirely, so preview/staging
+	// never read from or write to either layer (and there is nothing to purge
+	// afterward). Placed BEFORE the cache lookups. The production worker on its
+	// real domain never takes this branch, whatever SITE_INDEXABLE says —
+	// indexability and caching are independent.
+	if (IS_STAGING || isPreviewHost) {
 		const response = await next();
 		if (response.status !== 200) return response;
 		const contentType = response.headers.get('Content-Type') ?? '';
@@ -111,7 +130,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 
 		const baseHeaders = new Headers(response.headers);
 		baseHeaders.set('Cache-Control', STAGING_NO_CACHE);
-		baseHeaders.set('x-staticq-cache', 'STAGING-NO-CACHE');
+		baseHeaders.set('x-staticq-cache', `${IS_STAGING ? 'STAGING' : 'PREVIEW'}-NO-CACHE`);
 
 		return new Response(response.body, {
 			status: response.status,
