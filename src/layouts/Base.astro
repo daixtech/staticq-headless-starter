@@ -268,8 +268,14 @@ function stripHtmlAndCollapse(html: string): string {
 			})();
 		</script>
 		<meta name="generator" content={Astro.generator} />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="alternate icon" href="/favicon.ico" />
+		{/* Stable first-party icon URLs. /favicon.ico and
+		    /apple-touch-icon.png are dynamic routes proxying the WP Site
+		    Icon (Settings → General), falling back to the bundled
+		    /favicon.svg when none is set — see src/pages/favicon.ico.ts.
+		    Keeping the URLs fixed means an icon change in WP never
+		    requires purging cached page HTML. */}
+		<link rel="icon" href="/favicon.ico" />
+		<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 		<link rel="alternate" type="application/rss+xml" title={`${effectiveSiteName} feed`} href={absoluteUrl('/feed/')} />
 		<link rel="sitemap" type="application/xml" href="/sitemap.xml" />
 		<link rel="preconnect" href="https://rsms.me/" />
