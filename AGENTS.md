@@ -127,8 +127,12 @@ admin apply without a rebuild. Always read config via `lib/runtime-env.ts`
    **URL-impact engine** computes the exact affected URLs (permalink, home
    + affected sealed pages, each term archive, author, feed, sitemap) →
    signed POST to the receiver → caches replaced. Automatic; no work here.
-2. **WP-side hooks** extend that mapping (PHP, lives in WordPress — offer
-   the user a snippet for a small mu-plugin, not code in this repo):
+2. **WP-side hooks** extend that mapping. This is PHP living in WordPress —
+   offer the user a snippet for **their own mu-plugin**
+   (`wp-content/mu-plugins/`), never code in this repo and **never an edit
+   to the StaticQ plugin's own files** (plugin updates replace those
+   wholesale; the plugin stays stock — only this repo and the user's own
+   WP-side files are customized):
    - `sqheadless/object_urls` — add/remove URLs for one affected object.
    - `sqheadless/affected_objects` — add custom associations.
    - `sqheadless/static_archive_urls` — add site-static URLs (custom pages)
@@ -159,20 +163,25 @@ admin apply without a rebuild. Always read config via `lib/runtime-env.ts`
    reserved paths.
 
 **Add a data endpoint:** prefer an existing `staticq/v1` bundle. If WP
-needs to expose something new, the endpoint is PHP in the WordPress plugin
-(namespace `staticq/v1`, batched — one request per page render, not N+1),
-plus a typed fetcher module here re-exported from `lib/wp.ts`.
+needs to expose something new, give the user PHP for **their own
+mu-plugin** — never an edit to the StaticQ plugin — registering a route
+under **their own REST namespace** (e.g. `mysite/v1`; `staticq/v1` belongs
+to the plugin and future updates could collide). Batched — one request per
+page render, not N+1 — plus a typed fetcher module here re-exported from
+`lib/wp.ts`.
 
 **Template/style changes:** any page already cached keeps the old HTML
 until refreshed. After the deploy goes green, tell the user to verify on
 the `*.workers.dev` preview URL (always uncached), then run **Warmup**
 (site-wide) or **Single URL refresh** (a few pages) from WP admin.
 
-**Do not:** emit `Set-Cookie` from pages (the edge copy strips it; per-user
-state doesn't belong in cached HTML) · vary cached content on query
-strings · cache non-200s · rename/move route files without keeping the URL
-family shape · touch `WORKER_ENV` semantics (production = caches on;
-staging/preview = caches off).
+**Do not:** suggest editing the StaticQ WordPress plugin's files, ever —
+all WP-side custom code goes in the user's own mu-plugin, under their own
+REST namespace · emit `Set-Cookie` from pages (the edge copy strips it;
+per-user state doesn't belong in cached HTML) · vary cached content on
+query strings · cache non-200s · rename/move route files without keeping
+the URL family shape · touch `WORKER_ENV` semantics (production = caches
+on; staging/preview = caches off).
 
 ## Deploys
 
