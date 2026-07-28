@@ -221,6 +221,16 @@ publish step. The first-ever deploy may find a Worker already bootstrapped
 by the plugin (a 503 stub with bindings attached) — that's expected; the
 build replaces the stub and the bindings survive.
 
+**Failed deploys are safe**: if any workflow step fails (usually the
+build), `wrangler deploy` never runs and the live Worker keeps serving the
+last good version — a red run means "nothing changed", never "site down".
+Recovery is fix-forward (ask the user for the failing step's log from
+GitHub → Actions and diagnose from it) or `git revert` + push to return to
+the known-good baseline — prefer the revert when the fix isn't quickly
+convincing, rather than iterating "one more fix" commits on a broken
+`main`. Never attempt to repair a failed deploy through the Cloudflare
+console or by editing build output.
+
 ## Verification playbook (give these to the user — no code reading needed)
 
 - **`https://<worker>.workers.dev`** — always renders fresh, both cache
