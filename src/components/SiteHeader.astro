@@ -15,6 +15,12 @@ const { categories, siteConfig } = Astro.props;
 // env var, or the default in lib/site.ts.
 const brandName = siteConfig?.brand.name ?? SITE_TITLE;
 
+// Logo image, when one is set (WP admin → StaticQ Headless → Settings →
+// Brand, or the theme's Site Logo). Header renders it in place of the
+// text wordmark; text remains the fallback so a site without a logo (or
+// with site-config unreachable) still shows its name.
+const brandLogo = siteConfig?.brand.logo?.url ? siteConfig.brand.logo : null;
+
 // Primary nav source-of-truth, in priority order:
 //   1. siteConfig.primary_nav from the WP custom endpoint (editor-driven).
 //   2. PRIMARY_NAV in lib/site.ts.
@@ -70,7 +76,21 @@ const categoriesForSidePanel = categories.filter(
 				<line x1="3" y1="18" x2="21" y2="18"></line>
 			</svg>
 		</button>
-		<a href="/" class="site-header__logo">{brandName}</a>
+		<a href="/" class="site-header__logo" aria-label={brandName}>
+			{brandLogo ? (
+				<img
+					class="site-header__logo-img"
+					src={brandLogo.url}
+					alt={brandName}
+					width={brandLogo.width || undefined}
+					height={brandLogo.height || undefined}
+					loading="eager"
+					decoding="async"
+				/>
+			) : (
+				brandName
+			)}
+		</a>
 		<button
 			type="button"
 			class="theme-toggle"
@@ -144,7 +164,19 @@ const categoriesForSidePanel = categories.filter(
 	<button class="site-menu__backdrop" type="button" aria-label="Close menu" data-menu-close></button>
 	<div class="site-menu__panel" role="dialog" aria-modal="true" aria-labelledby="site-menu-heading">
 		<div class="site-menu__head">
-			<a href="/" class="site-menu__brand">{brandName}</a>
+			<a href="/" class="site-menu__brand" aria-label={brandName}>
+				{brandLogo ? (
+					<img
+						class="site-menu__brand-img"
+						src={brandLogo.url}
+						alt={brandName}
+						loading="lazy"
+						decoding="async"
+					/>
+				) : (
+					brandName
+				)}
+			</a>
 			<button class="site-menu__close" type="button" aria-label="Close menu" data-menu-close>
 				<svg viewBox="0 0 24 24" aria-hidden="true">
 					<line x1="6" y1="6" x2="18" y2="18"></line>
@@ -254,6 +286,17 @@ const categoriesForSidePanel = categories.filter(
 
 	.site-header__logo span {
 		color: var(--accent);
+	}
+
+	/* Image wordmark — height-capped so any reasonable logo shape fits
+	 * the header row; width follows the aspect ratio. The width/height
+	 * attributes from WP prevent layout shift before the image loads. */
+	.site-header__logo-img {
+		display: block;
+		height: 34px;
+		width: auto;
+		max-width: 240px;
+		object-fit: contain;
 	}
 
 	/* ---------- Primary nav (second row) ---------- */
@@ -515,6 +558,14 @@ const categoriesForSidePanel = categories.filter(
 
 	.site-menu__brand span {
 		color: var(--accent);
+	}
+
+	.site-menu__brand-img {
+		display: block;
+		height: 28px;
+		width: auto;
+		max-width: 200px;
+		object-fit: contain;
 	}
 
 	.site-menu__close {
