@@ -144,6 +144,34 @@ admin apply without a rebuild. Always read config via `lib/runtime-env.ts`
    URL and re-render the whole site in paced batches — the right rollout
    after template changes; the URL list is downloadable as CSV/JSON).
 
+## Content belongs in WordPress, not in templates
+
+This is a headless WordPress site: WP is the single source of truth for
+content, and templates are generic renderers. The classic long-term
+failure mode of WP sites is content baked into code — every hardcoded
+headline, curated list, banner, or link turns a future content edit into
+a developer task (edit template → deploy → refresh caches) instead of a
+WP-admin edit that publishes and refreshes itself. In this system it's
+doubly wrong: WP-backed content flows through per-URL cache invalidation
+automatically; hardcoded content only updates via deploy + manual refresh.
+
+When a request includes literal content (text, links, lists of posts,
+images, anything that will plausibly change), route it:
+
+| The content is… | Put it in… | Rendered via… |
+|---|---|---|
+| Editorial copy, page sections | a WP page or post (blocks) | the existing single/page route |
+| A curated or automatic list of posts | a category or tag assignment | taxonomy queries (`lib/wp`) |
+| Brand text, navigation, footer links | site-config (WP options / `staticq_site_config` filter) | `getSiteConfig()` |
+| A UI label tied to code behavior ("Read more", aria text) | the template | hardcoding is correct here |
+
+Default behavior: when a request would bake changeable content into a
+template, implement the WP-backed version — or at minimum offer it and
+state the tradeoff in one sentence: *"hardcoded = you need me + a deploy +
+a cache refresh every time this changes; WP-backed = you edit it in WP
+admin and it refreshes itself."* Users usually don't know they're making
+this choice; surfacing it is part of your job.
+
 ## Recipes
 
 **Add a content-driven page (e.g. `/deals/` listing a category):**
@@ -177,7 +205,9 @@ the `*.workers.dev` preview URL (always uncached), then run **Warmup**
 
 **Do not:** suggest editing the StaticQ WordPress plugin's files, ever —
 all WP-side custom code goes in the user's own mu-plugin, under their own
-REST namespace · emit `Set-Cookie` from pages (the edge copy strips it;
+REST namespace · bake changeable content (copy, curated lists, links,
+images) into templates without offering the WP-backed alternative · emit
+`Set-Cookie` from pages (the edge copy strips it;
 per-user state doesn't belong in cached HTML) · vary cached content on
 query strings · cache non-200s · rename/move route files without keeping
 the URL family shape · touch `WORKER_ENV` semantics (production = caches
