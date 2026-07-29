@@ -256,6 +256,9 @@ console or by editing build output.
 
 - **`https://<worker>.workers.dev`** - always renders fresh, both cache
   layers bypassed. The place to confirm a deploy before refreshing caches.
+  The plugin's Go live disables this subdomain (Take offline re-enables
+  it); on a live site, have the user toggle it temporarily in the CF
+  dashboard (Workers & Pages → Worker → Settings → Domains & Routes).
 - **`x-staticq-cache` response header** on the live domain: `EDGE-HIT` /
   `R2-HIT` = cached copy, `MISS` = just rendered, `TTL-MISS` = TTL block,
   `BYPASS` = search.
