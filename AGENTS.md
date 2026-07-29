@@ -242,6 +242,22 @@ publish step. The first-ever deploy may find a Worker already bootstrapped
 by the plugin (a 503 stub with bindings attached) - that's expected; the
 build replaces the stub and the bindings survive.
 
+**Triage rule - identify the failing STEP before diagnosing.** A red run
+has several unrelated causes that all look identical from WP admin, and
+consecutive failures can have DIFFERENT causes (this happened in the
+field: a CF edge block one hour, lockfile drift the next - diagnosing
+the second by the first's report wasted the session). Never assume the
+current failure shares the previous one's cause; open the newest
+attempt's log and find the first failed step:
+
+| Failing step | Cause class | Not the problem |
+|---|---|---|
+| Install (`npm ci` error) | lockfile drift - see signature below | token, Cloudflare, your code |
+| Build | code/TS error - fix or revert | token, lockfile |
+| Inject live bindings | CF API unreachable or token can't read | your code |
+| Deploy, JSON error from API | token permissions / worker config | lockfile, code |
+| Deploy, 403 with an HTML body | CF edge block - see signature below | everything on your side |
+
 **Known failure signature - lockfile drift kills the Install step:** the
 run fails before the build with `npm error 'npm ci' can only install
 packages when your package.json and package-lock.json ... are in sync`
