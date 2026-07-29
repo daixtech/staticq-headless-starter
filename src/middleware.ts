@@ -122,7 +122,12 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 	// afterward). Placed BEFORE the cache lookups. The production worker on its
 	// real domain never takes this branch, whatever SITE_INDEXABLE says —
 	// indexability and caching are independent.
-	if (IS_STAGING || isPreviewHost) {
+	// Local dev joins this branch too: wrangler's platform proxy persists
+	// caches.default to .wrangler/state on disk, so without this bypass a
+	// stale page (e.g. one rendered before .env was configured) survives
+	// dev-server restarts and env changes.
+	const isDev = import.meta.env.DEV;
+	if (IS_STAGING || isPreviewHost || isDev) {
 		const response = await next();
 		if (response.status !== 200) return response;
 		const contentType = response.headers.get('Content-Type') ?? '';
@@ -130,7 +135,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 
 		const baseHeaders = new Headers(response.headers);
 		baseHeaders.set('Cache-Control', STAGING_NO_CACHE);
-		baseHeaders.set('x-staticq-cache', `${IS_STAGING ? 'STAGING' : 'PREVIEW'}-NO-CACHE`);
+		baseHeaders.set('x-staticq-cache', `${isDev ? 'DEV' : IS_STAGING ? 'STAGING' : 'PREVIEW'}-NO-CACHE`);
 
 		return new Response(response.body, {
 			status: response.status,

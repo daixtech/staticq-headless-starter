@@ -51,6 +51,16 @@ if (bundle) {
 	}
 }
 
+// A failed WP fetch must never become a cached page: the middleware
+// caches any 200 text/html for up to a year, so an error rendered with
+// the default status would freeze the broken homepage at the edge and
+// in R2 until the next purge of /. 503 keeps it out of both layers
+// (only 200s are cached) and no-store keeps every other cache honest.
+if (error) {
+	Astro.response.status = 503;
+	Astro.response.headers.set('Cache-Control', 'no-store');
+}
+
 // Hero = newest post; the rail is the next 4 newest; everything after
 // that fills the "More Posts" grid. These are honest newest-first slices —
 // no "featured"/"editor's pick" framing, since nothing here is curated.

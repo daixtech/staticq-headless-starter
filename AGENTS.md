@@ -261,7 +261,8 @@ console or by editing build output.
   dashboard (Workers & Pages → Worker → Settings → Domains & Routes).
 - **`x-staticq-cache` response header** on the live domain: `EDGE-HIT` /
   `R2-HIT` = cached copy, `MISS` = just rendered, `TTL-MISS` = TTL block,
-  `BYPASS` = search.
+  `BYPASS` = search, `DEV-NO-CACHE` = local dev (both cache layers
+  skipped).
 - **Refresh simulator** (WP admin → StaticQ → Settings → Cache): dry-runs
   an edit and lists the exact URLs that would refresh - the way to prove
   freshness wiring works before trusting it.
