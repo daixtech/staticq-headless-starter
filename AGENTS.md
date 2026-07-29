@@ -247,8 +247,10 @@ if the deploy fails at the final Worker upload with a **403 whose body is
 an HTML block page** (not JSON; wrangler says "Received a malformed
 response from the API"), Cloudflare's own firewall in front of
 api.cloudflare.com is blocking the large bundle POST from GitHub's
-runner IPs. This is not a token, workflow, or code problem, and retries
-won't help. Workaround: deploy once from the user's machine
+runner IPs. This is not a token, workflow, or code problem. It is
+intermittent (reputation-based): it can persist across immediate
+retries and clear hours later. Re-run later, or deploy once from the
+user's machine
 (`npm run build && node scripts/inject-live-bindings.mjs && npx wrangler
 deploy --keep-vars --name <worker>`), and have the user open a
 Cloudflare support ticket quoting the Ray ID from the 403 page.
