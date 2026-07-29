@@ -70,9 +70,9 @@ export async function getSiteIconUrl(): Promise<string | null> {
  * The edge-cache write uses the query-stripped request URL as key —
  * the SAME key the middleware's cache.match uses — so subsequent
  * requests are answered as EDGE-HITs without re-entering the route.
- * The stored s-maxage bounds the entry's lifetime (same TTL-block
- * pattern the middleware uses for AJAX blocks; R2 is deliberately not
- * involved because it has no native expiry).
+ * The stored s-maxage bounds the entry's lifetime (the middleware's
+ * TTL-block pattern; R2 is deliberately not involved because it has
+ * no native expiry).
  */
 export async function serveSiteIcon(
 	request: Request,

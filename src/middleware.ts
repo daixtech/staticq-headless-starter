@@ -201,13 +201,13 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 	// up-front kills the race entirely.
 	const buffered = await response.text();
 
-	// AJAX-block detection. If the Astro template set
-	// `Cache-Control: s-maxage=<n>` on its response, treat this URL as
-	// a time-expiring block — store ONLY in the edge cache with the
-	// page's own TTL, skip R2 entirely. The contract: page declares
-	// its own freshness budget, middleware honors it. Used for
-	// "latest"-style blocks that should refresh on a clock rather
-	// than via WP invalidation.
+	// TTL-block detection (dynamic blocks, a.k.a. "Ajax blocks"). If
+	// the Astro template set `Cache-Control: s-maxage=<n>` on its
+	// response, treat this URL as a time-expiring block — store ONLY in
+	// the edge cache with the page's own TTL, skip R2 entirely. The
+	// contract: page declares its own freshness budget, middleware
+	// honors it. Used for "latest"-style blocks that should refresh on
+	// a clock rather than via WP invalidation.
 	//
 	// Why edge-only: R2 has no native TTL; modeling per-object expiry
 	// there means writing eviction logic and read-time staleness
@@ -218,15 +218,15 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 	// Why not also write to R2 with a long TTL: defeats the purpose.
 	// R2 hits would serve stale content past the edge TTL window.
 	const ttlMatch = (response.headers.get('Cache-Control') ?? '').match(/s-maxage\s*=\s*(\d+)/);
-	const ajaxTtl  = ttlMatch ? parseInt(ttlMatch[1], 10) : 0;
+	const blockTtl = ttlMatch ? parseInt(ttlMatch[1], 10) : 0;
 
 	const baseHeaders = new Headers(response.headers);
 	if (!baseHeaders.has('Cache-Control')) {
 		baseHeaders.set('Cache-Control', LONG_EDGE_CACHE);
 	}
-	baseHeaders.set('x-staticq-cache', ajaxTtl > 0 ? 'TTL-MISS' : 'MISS');
-	if (ajaxTtl > 0) {
-		baseHeaders.set('x-staticq-ttl', String(ajaxTtl));
+	baseHeaders.set('x-staticq-cache', blockTtl > 0 ? 'TTL-MISS' : 'MISS');
+	if (blockTtl > 0) {
+		baseHeaders.set('x-staticq-ttl', String(blockTtl));
 	}
 
 	const finalResponse = new Response(buffered, {
@@ -263,9 +263,9 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 						);
 					}),
 				);
-				// AJAX blocks skip R2 entirely — see the comment block at the
-				// ajaxTtl detection above. Edge cache handles their lifetime.
-				if (ajaxTtl === 0 && pages) {
+				// TTL blocks skip R2 entirely — see the comment block at the
+				// blockTtl detection above. Edge cache handles their lifetime.
+				if (blockTtl === 0 && pages) {
 					tasks.push(
 						pages.put(r2Key, buffered, {
 							httpMetadata: { contentType },
@@ -281,7 +281,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 							);
 						}),
 					);
-				} else if (ajaxTtl === 0 && !pages && !warnedMissingPagesBinding) {
+				} else if (blockTtl === 0 && !pages && !warnedMissingPagesBinding) {
 					warnedMissingPagesBinding = true;
 					console.warn(
 						'[staticq] R2 PAGES binding missing — re-run the WP plugin setup wizard to re-attach it. Edge cache still working, R2 writes are no-ops until bound.',
