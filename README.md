@@ -36,11 +36,11 @@ and the `src/lib/wp.ts` data client. See the plugin's built-in **Tutorials**
 
 ## Working with an AI coding agent
 
-This repo ships **[`AGENTS.md`](AGENTS.md)** — a system guide that AI coding
+This repo ships **[`AGENTS.md`](AGENTS.md)** - a system guide that AI coding
 agents (Claude Code, Cursor, and others) read automatically. It explains the
 two-Worker topology, the cache layers and refresh system, the URL-family
 contract, and which files must not be casually changed, so an agent can make
 correct suggestions even when you can't validate the Astro code yourself.
 Ask your agent to build what you need, then verify the result with the
-WordPress admin tools listed at the end of that file — no code reading
+WordPress admin tools listed at the end of that file - no code reading
 required.
