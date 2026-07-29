@@ -190,6 +190,27 @@ this choice; surfacing it is part of your job.
 3. Never invent a URL shape that collides with the families table or the
    reserved paths.
 
+**Add a dynamic fragment ("Ajax block") inside cached pages:** when the
+user wants "latest / trending / most-read" style content inside pages
+that otherwise rarely re-render, do NOT render it server-side into every
+page (that would make every publish stale every embedding page). Give
+the fragment its own URL, loaded client-side, in one of two flavors:
+
+- **Clock (TTL) block**: the fragment route responds with
+  `Cache-Control: s-maxage=<seconds>` - edge-cached, expires on a
+  timer, needs no refresh wiring at all. Use when "fresh within N
+  minutes" is acceptable.
+- **Event block**: the fragment gets a recognizable **path-based** URL
+  per subject (e.g. `/block/category/<slug>/` - never query strings,
+  the cache key strips them), and a WP-side `sqheadless/object_urls`
+  hook (user's mu-plugin - give them the snippet) appends that URL
+  whenever the matching object refreshes. One publish then re-renders
+  the block once, everywhere it's embedded. Use when the content must
+  match edits exactly.
+
+Ask the user (or infer) which freshness they need; default to the TTL
+flavor when unsure - it's simpler and self-maintaining.
+
 **Add a data endpoint:** prefer an existing `staticq/v1` bundle. If WP
 needs to expose something new, give the user PHP for **their own
 mu-plugin** - never an edit to the StaticQ plugin - registering a route
