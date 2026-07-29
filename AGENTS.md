@@ -242,6 +242,17 @@ publish step. The first-ever deploy may find a Worker already bootstrapped
 by the plugin (a 503 stub with bindings attached) - that's expected; the
 build replaces the stub and the bindings survive.
 
+**Known failure signature - Cloudflare edge-blocks the upload from CI:**
+if the deploy fails at the final Worker upload with a **403 whose body is
+an HTML block page** (not JSON; wrangler says "Received a malformed
+response from the API"), Cloudflare's own firewall in front of
+api.cloudflare.com is blocking the large bundle POST from GitHub's
+runner IPs. This is not a token, workflow, or code problem, and retries
+won't help. Workaround: deploy once from the user's machine
+(`npm run build && node scripts/inject-live-bindings.mjs && npx wrangler
+deploy --keep-vars --name <worker>`), and have the user open a
+Cloudflare support ticket quoting the Ray ID from the 403 page.
+
 **Failed deploys are safe**: if any workflow step fails (usually the
 build), `wrangler deploy` never runs and the live Worker keeps serving the
 last good version - a red run means "nothing changed", never "site down".
