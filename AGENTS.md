@@ -190,7 +190,7 @@ this choice; surfacing it is part of your job.
 3. Never invent a URL shape that collides with the families table or the
    reserved paths.
 
-**Add an Ajax block (a dynamic fragment inside cached pages):** when the
+**Add a dynamic fragment inside cached pages (a.k.a. "Ajax block"):** when the
 user wants "latest / trending / most-read" style content inside pages
 that otherwise rarely re-render, do NOT render it server-side into every
 page (that would make every publish stale every embedding page). Give
