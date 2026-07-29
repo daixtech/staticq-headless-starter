@@ -242,6 +242,24 @@ publish step. The first-ever deploy may find a Worker already bootstrapped
 by the plugin (a 503 stub with bindings attached) - that's expected; the
 build replaces the stub and the bindings survive.
 
+**Known failure signature - lockfile drift kills the Install step:** the
+run fails before the build with `npm error 'npm ci' can only install
+packages when your package.json and package-lock.json ... are in sync`
+(often `Missing: <pkg> from lock file`). Causes: package.json edited
+without updating the lockfile, a lockfile merge resolved badly, or a
+lockfile generated without platform-conditional optional-dep entries.
+You can fix this yourself, fully:
+
+1. Delete BOTH `node_modules/` and `package-lock.json` (on Astro 7 run
+   `npx astro dev stop` first - the dev daemon locks node_modules).
+2. Run a full `npm install` (npm 10+). Do NOT repair with
+   `--package-lock-only` while a node_modules exists - it reproduces
+   the same gap.
+3. Verify the lockfile records optional-dep ENTRIES, not just
+   references: `grep '"node_modules/@emnapi/core"' package-lock.json`
+   must match (the key form). If it doesn't, step 1 wasn't clean.
+4. Commit the lockfile and push - the push redeploys.
+
 **Known failure signature - Cloudflare edge-blocks the upload from CI:**
 if the deploy fails at the final Worker upload with a **403 whose body is
 an HTML block page** (not JSON; wrangler says "Received a malformed
