@@ -27,16 +27,20 @@ export async function getCategoryArchive(
 	// leaf categories the flag is a no-op (get_term_children returns []).
 	// Bundle endpoint version added in plugin commit alongside this one.
 	//
-	// We bypass the bundle when excludeIds is non-empty: the bundle
-	// endpoint doesn't take an exclude param, and the hero-post exclusion
-	// is small enough (typically 1-4 IDs) that the per-page perf cost of
-	// the standard REST path is negligible. Layout is recomputed from
-	// the filtered total returned by REST — slot stability holds because
-	// the SAME hero posts are excluded consistently across requests.
-	if (excludeIds.length === 0) {
-		const bundle = await getArchiveBundle({ page, categoryId, includeDescendants: true });
-		if (bundle) return bundle;
-	}
+	// Hero-post exclusions ride along on the bundle (`exclude`), so the
+	// batched path is used even on hero-enabled categories. The endpoint
+	// filters AFTER slot selection and returns the unfiltered layout, so
+	// pagination stays in step with the WP invalidation engine.
+	//
+	// The wp/v2 fallback below runs only when the bundle endpoint is
+	// absent (older plugin) — its `_embed=1` fan-out costs ~100 internal
+	// REST calls per render, so it is a compatibility path, not a
+	// routine one. NOTE: it recomputes layout from the FILTERED total,
+	// which can drift from the engine's page math; acceptable only
+	// because it is a fallback.
+	const bundle = await getArchiveBundle({ page, categoryId, includeDescendants: true, excludeIds });
+	if (bundle) return bundle;
+
 
 	const excludeParam = excludeIds.length > 0
 		? `&exclude=${excludeIds.join(',')}`

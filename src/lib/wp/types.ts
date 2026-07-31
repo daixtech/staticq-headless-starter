@@ -316,6 +316,8 @@ export interface ArchiveBundleArgs {
 	// for tag archives (tags are non-hierarchical). See
 	// doc/reversed-pagination.md §13.5 for the counting contract.
 	includeDescendants?: boolean;
+	/** Post IDs to omit from the rendered list (display-time only). */
+	excludeIds?: number[];
 }
 
 export interface ArchiveBundle {

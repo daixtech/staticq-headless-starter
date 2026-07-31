@@ -265,6 +265,13 @@ export async function getArchiveBundle(
 		if (args.categoryId) params.set('category_id', String(args.categoryId));
 		if (args.tagId) params.set('tag_id', String(args.tagId));
 		if (args.includeDescendants) params.set('include_descendants', '1');
+		// Display-time exclusions (e.g. hero posts rendered above the grid).
+		// The endpoint filters AFTER slot selection and returns the
+		// unfiltered layout, so pagination stays in step with the WP
+		// invalidation engine - never recompute layout from a filtered list.
+		if (args.excludeIds && args.excludeIds.length > 0) {
+			params.set('exclude', args.excludeIds.join(','));
+		}
 		const qs = params.toString();
 		const url = `${WP_BASE_URL}/wp-json/staticq/v1/archive${qs ? `?${qs}` : ''}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
