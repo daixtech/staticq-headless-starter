@@ -10,6 +10,10 @@ import {
 	getCategoryArchive,
 	getCategoryBySlug,
 	getCategoryHeroPosts,
+	isHeroEligible,
+	HERO_TAG_SLOTS,
+	HERO_ROOT_SLUGS,
+	getCategoryContext,
 	getDirectChildren,
 	type WPCategory,
 	type HeroSlot,
@@ -64,13 +68,40 @@ if (slugSegments.length === 0) {
 // categories across 7 paginated requests is unreliable enough on this
 // origin that we MUST NOT depend on it for the lookup itself.
 const slug = slugSegments[slugSegments.length - 1];
-const [category, cats] = await Promise.all([
-	getCategoryBySlug(slug),
-	getCategories().catch(() => [] as WPCategory[]),
-]);
+const category = await getCategoryBySlug(slug);
 if (!category) {
 	return Astro.rewrite('/404');
 }
+
+// Hero eligibility has two halves: the ROOT must be opted in, and the
+// category must be a leaf. The root half is already in the URL - the
+// first path segment IS the root slug - so it can be checked before any
+// request. Gating on it keeps the hero query off every category page
+// that could never render a strip. Leaf-ness is confirmed below, once
+// the term tree is known.
+const heroRootSlug = slugSegments[0] ?? '';
+const mayShowHero = pageNum === null
+	&& HERO_TAG_SLOTS.length > 0
+	&& HERO_ROOT_SLUGS.has(heroRootSlug);
+
+// ONE call: posts + layout + SEO head + term tree + hero slots.
+const archiveBundle = await getCategoryArchive(
+	Number(category.id),
+	pageNum,
+	[],
+	mayShowHero ? HERO_TAG_SLOTS.map((slot) => slot.tagId) : [],
+);
+
+// Category list for the chain walk / leaf detection. Preference order:
+// the bundle's term_context (free - already in the response we just
+// made), then a targeted ancestors+children lookup, then the full
+// taxonomy as a last resort. That last path is what makes large sites
+// crawl: 614 categories is 7 paginated requests, ~13s cold, on EVERY
+// category render.
+const cats: WPCategory[] = archiveBundle.termContext?.length
+	? archiveBundle.termContext
+	: await getCategoryContext(category)
+		.catch(() => getCategories().catch(() => [category] as WPCategory[]));
 
 // Best-effort canonical parent-chain walk. If a parent ID exists in the
 // resolved category but isn't in the cached list (paginated walk dropped
@@ -126,17 +157,32 @@ if (chainComplete && canonicalBase !== incomingBase) {
 const directChildren = getDirectChildren(category.id, cats);
 const isLeaf = directChildren.length === 0;
 
+// Slots come back with the bundle above. The per-slot fetcher is only
+// reached on installs whose plugin predates `hero_tags` - see the cost
+// warning in lib/wp/hero.ts.
 let heroPosts: HeroSlot[] = [];
-if (isLeaf && pageNum === null) {
-	heroPosts = await getCategoryHeroPosts(category, cats);
+if (isLeaf && mayShowHero && isHeroEligible(category, cats)) {
+	const bundled = archiveBundle.heroPosts;
+	heroPosts = bundled
+		? HERO_TAG_SLOTS
+			.map((slot) => {
+				const post = bundled[slot.tagId];
+				return post ? { key: slot.key, label: slot.label, post } : null;
+			})
+			.filter((h): h is HeroSlot => h !== null)
+		: await getCategoryHeroPosts(category, cats);
 }
 const heroPostIds = heroPosts.map((h) => h.post.id);
 
-const { posts, layout, seoHead } = await getCategoryArchive(
-	Number(category.id),
-	pageNum,
-	heroPostIds,
-);
+// Drop hero posts from the grid at render time so they aren't shown
+// twice on page 1. Display-only: `layout` stays the endpoint's
+// unfiltered math, which is what keeps pagination in step with the WP
+// invalidation engine. Sealed pages render no strip, so nothing is
+// filtered there.
+const { layout, seoHead } = archiveBundle;
+const posts = heroPostIds.length
+	? archiveBundle.posts.filter((p) => !heroPostIds.includes(p.id))
+	: archiveBundle.posts;
 
 if (pageNum !== null && pageNum > layout.sealedPagesCount) {
 	return Astro.rewrite('/404');

@@ -272,6 +272,15 @@ export async function getArchiveBundle(
 		if (args.excludeIds && args.excludeIds.length > 0) {
 			params.set('exclude', args.excludeIds.join(','));
 		}
+		// Hero slots, resolved server-side in ONE category-first query.
+		// Do NOT fetch these per slot from wp/v2 (`categories=X&tags=Y`):
+		// that shape lets MySQL start from the tag side, so a popular tag
+		// makes every leaf category pay for scanning it. Measured on a
+		// 10k-post site with a 575-post tag: 29s COLD per slot, 1.3s warm.
+		// See docs note in lib/wp/hero.ts.
+		if (args.heroTagIds && args.heroTagIds.length > 0) {
+			params.set('hero_tags', args.heroTagIds.join(','));
+		}
 		const qs = params.toString();
 		const url = `${WP_BASE_URL}/wp-json/staticq/v1/archive${qs ? `?${qs}` : ''}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
@@ -281,6 +290,12 @@ export async function getArchiveBundle(
 			layout: ArchiveLayout;
 			seo_head?: string | null;
 			rank_math_head?: string | null;
+			term_context?: {
+				self: WPCategory;
+				ancestors: WPCategory[];
+				children: WPCategory[];
+			} | null;
+			hero_posts?: Record<string, WPPost> | null;
 		};
 		// Minimal shape check — treat malformed responses as missing so the
 		// caller's fallback runs (rather than rendering an empty archive).
@@ -293,10 +308,25 @@ export async function getArchiveBundle(
 		) {
 			return null;
 		}
+		// term_context saves fetching the FULL category list just to walk
+		// a breadcrumb chain or decide leaf-ness. Flattened to the shape
+		// callers already expect from getCategories().
+		const tc = data.term_context;
+		const termContext = tc?.self
+			? [tc.self, ...(tc.ancestors ?? []), ...(tc.children ?? [])]
+			: null;
+		const heroPosts = data.hero_posts
+			? Object.fromEntries(
+				Object.entries(data.hero_posts).map(([k, v]) => [Number(k), v]),
+			) as Record<number, WPPost>
+			: null;
+
 		return {
 			posts: data.posts,
 			layout: data.layout,
 			seoHead: data.seo_head ?? data.rank_math_head ?? null,
+			termContext,
+			heroPosts,
 		};
 	} catch {
 		return null;

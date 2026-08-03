@@ -114,6 +114,36 @@ adding fetchers:
 - `pagination.ts` - see contract above. `archive.ts` - slot-stable
   fetchers + search. `seo.ts` - SEO-plugin `<head>` fragments.
   `images.ts`, `display.ts`, `hero.ts` - presentation helpers.
+- `terms.ts` - targeted category lookups (`getCategoryContext`,
+  `getTopCategories`). Use these instead of `getCategories()`.
+
+### Never make WordPress do a taxonomy-wide or tag-first query per page
+
+Two query shapes look harmless in code review and cost tens of seconds on
+a real site. Both have already bitten this project; both are fixed, and
+both are easy to reintroduce.
+
+**1. Fetching every category to use three of them.** `getCategories()`
+pages through the entire taxonomy, 100 per request. On 614 categories
+that is 7 round-trips and ~13s cold - and it was being paid on every post
+and category render just to build a breadcrumb or eight nav links. Get
+the term tree from the bundle you are already fetching (`term_context` on
+`archive` and `single`), or use `lib/wp/terms.ts`. Reach for
+`getCategories()` only when you truly need all of them.
+
+**2. Asking for `categories=X&tags=Y` per hero slot.** This lets MySQL
+start from the TAG side, so every leaf category pays to scan the whole
+tag. Measured here: a 575-post tag cost **29 seconds COLD** per slot
+(1.3s warm), turning 1s category pages into 20-44s ones and roughly
+halving warmup throughput. Request `hero_tags` on the archive bundle
+instead - the endpoint resolves every slot from the CATEGORY side, in one
+query bounded by that category's size rather than the tag's popularity.
+
+The general rule: **cold is the number that matters.** A warmup renders
+every URL exactly once, cold, so a query that is "fine" warm is not fine.
+When you add a fetcher, ask what it costs on a site with 10k posts and
+600 categories - and measure it against an unwarmed URL, not one you just
+loaded.
 
 Config reaches the code three ways (the "bridge"): local dev reads `.env`;
 CI builds read GitHub Variables; the live Worker reads **runtime bindings

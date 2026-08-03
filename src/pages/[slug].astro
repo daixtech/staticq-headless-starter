@@ -123,8 +123,22 @@ if (post) {
 	const needsCustomFetch = bundle && (
 		primaryOnPost === undefined || subtitleOnPost === undefined
 	);
+	// Breadcrumb ancestors: the single bundle carries `term_context` for
+	// the post's primary category, which is all buildPostChain needs.
+	// Falling back to the whole taxonomy costs several paginated calls
+	// per post render on a large site.
+	const bundledTerms = bundle?.term_context;
+	const termsFromBundle = bundledTerms?.self
+		? [
+			bundledTerms.self,
+			...(bundledTerms.ancestors ?? []),
+			...(bundledTerms.children ?? []),
+		]
+		: null;
 	const [allCats, fetchedCustom] = await Promise.all([
-		getCategories().catch(() => []),
+		termsFromBundle
+			? Promise.resolve(termsFromBundle)
+			: getCategories().catch(() => []),
 		needsCustomFetch
 			? getPostCustomFields(post.id)
 			: Promise.resolve({

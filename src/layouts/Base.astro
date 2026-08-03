@@ -5,7 +5,7 @@ import SiteFooter from '../components/SiteFooter.astro';
 import SEOJsonLd from '../components/SEOJsonLd.astro';
 import {
 	WP_BASE_URL,
-	getCategories,
+	getTopCategories,
 	getFeaturedImageAlt,
 	getFeaturedImageUrl,
 	getSeoHead,
@@ -216,13 +216,13 @@ if (breadcrumb && breadcrumb.length > 1 && !headHasBreadcrumb) {
 	});
 }
 
+// Nav links: ask WP for the top N directly rather than pulling every
+// category and slicing locally. On a site with hundreds of categories
+// the fetch-all costs several paginated round-trips per render - paid
+// on EVERY page, to render eight links.
 let categories: WPCategory[] = [];
 try {
-	const all = await getCategories();
-	categories = all
-		.filter((c) => c.count > 0)
-		.sort((a, b) => b.count - a.count)
-		.slice(0, 8);
+	categories = await getTopCategories(8);
 } catch {
 	// leave categories empty if WP is unreachable
 }

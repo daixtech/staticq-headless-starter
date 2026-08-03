@@ -19,6 +19,7 @@ export async function getCategoryArchive(
 	categoryId: number,
 	page: number | null,
 	excludeIds: number[] = [],
+	heroTagIds: number[] = [],
 ): Promise<ArchiveBundle> {
 	// Always request descendant-inclusive counts for category archives.
 	// Matches the plugin URL engine's count_published_in_term semantics so
@@ -38,7 +39,16 @@ export async function getCategoryArchive(
 	// routine one. NOTE: it recomputes layout from the FILTERED total,
 	// which can drift from the engine's page math; acceptable only
 	// because it is a fallback.
-	const bundle = await getArchiveBundle({ page, categoryId, includeDescendants: true, excludeIds });
+	// Hero slots (when the route asks for them) are resolved inside this
+	// same call - see lib/wp/hero.ts for why they must not be fetched per
+	// slot from wp/v2.
+	const bundle = await getArchiveBundle({
+		page,
+		categoryId,
+		includeDescendants: true,
+		excludeIds,
+		heroTagIds,
+	});
 	if (bundle) return bundle;
 
 

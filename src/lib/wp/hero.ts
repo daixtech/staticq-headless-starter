@@ -7,12 +7,22 @@ import type { HeroSlot, HeroTagSlot, WPCategory, WPPost } from './types';
 //
 // On leaf categories under specific root categories (opted in via
 // HERO_ROOT_SLUGS below), an optional hero strip renders above the main
-// post grid. Each slot maps a display label to a "purpose" tag; we query
-// `category:THIS ∩ tag:PURPOSE`, pick the most recent matching post, and
-// render it as a hero card. Empty slots are hidden silently.
+// post grid. Each slot maps a display label to a "purpose" tag; the
+// most recent post in `category:THIS ∩ tag:PURPOSE` fills the slot.
+// Empty slots are hidden silently.
 //
 // The hero strip only appears on page 1. Hero posts are excluded from
 // the main grid (and from every paginated page after).
+//
+// HOW THE SLOTS ARE FILLED - read before changing this:
+// Ask the archive bundle (`hero_tags` -> `hero_posts`). Do NOT fetch a
+// slot at a time from wp/v2 with `categories=X&tags=Y`. That query shape
+// lets MySQL start from the TAG side, so every leaf category pays for
+// scanning the whole tag: measured on a 10k-post site, a 575-post tag
+// cost 29 SECONDS COLD per slot (1.3s warm) and turned 1s category
+// pages into 20-44s ones. Warmups render cold URLs by definition, so
+// cold is the number that matters. The endpoint instead starts from the
+// category - bounded by ITS size, not the tag's popularity.
 
 // EDIT for your site: define the hero-strip slots. Each maps a display
 // label to a WordPress tag ID. Empty by default — the hero strip stays
@@ -33,8 +43,23 @@ export const HERO_ROOT_SLUGS = new Set<string>([
 ]);
 
 /**
+ * True when the category can show a hero strip: a leaf whose root is
+ * opted into HERO_ROOT_SLUGS. Exported so a route can check eligibility
+ * without triggering the fallback fetch above.
+ */
+export function isHeroEligible(
+	category: WPCategory,
+	allCats: WPCategory[],
+): boolean {
+	const root = rootOf(category, allCats);
+	if (!root || !HERO_ROOT_SLUGS.has(root.slug)) return false;
+	return isLeafCategory(category, allCats);
+}
+
+/**
  * Walk a category up its parent chain to find the root (parent === 0).
- * Uses the cached all-categories list to avoid extra REST calls.
+ * Uses the supplied category list (term_context is enough) to avoid
+ * extra REST calls.
  */
 function rootOf(
 	category: WPCategory,
@@ -59,10 +84,12 @@ function isLeafCategory(category: WPCategory, allCats: WPCategory[]): boolean {
 }
 
 /**
- * Return up to N hero posts for a leaf category, one per slot. Slots
- * with no matching post are dropped silently. Runs the per-slot queries
- * in parallel — typically 4 small REST calls (~150ms total). When the
- * category isn't under a hero-eligible root, returns [].
+ * COMPATIBILITY FALLBACK - prefer the bundle's `hero_posts`.
+ *
+ * Fills the slots with one wp/v2 request each. Only for installs whose
+ * WP plugin predates `hero_tags`; see the cost warning at the top of
+ * this file before reaching for it deliberately. Returns [] when the
+ * category isn't under a hero-eligible root.
  */
 export async function getCategoryHeroPosts(
 	category: WPCategory,

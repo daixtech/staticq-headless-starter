@@ -42,7 +42,13 @@ export {
 } from './wp/rest';
 
 // Leaf-category hero strip.
-export { HERO_TAG_SLOTS, HERO_ROOT_SLUGS, getCategoryHeroPosts } from './wp/hero';
+export {
+	HERO_TAG_SLOTS,
+	HERO_ROOT_SLUGS,
+	getCategoryHeroPosts,
+	isHeroEligible,
+} from './wp/hero';
+export { getCategoryContext, getTopCategories } from './wp/terms';
 
 // Slot-stable archive fetchers + search.
 export {

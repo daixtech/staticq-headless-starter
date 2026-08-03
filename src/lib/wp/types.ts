@@ -271,6 +271,14 @@ export interface SingleBundle {
 	// inline image links never trigger it. Empty array when the post has
 	// no image attachments.
 	gallery_attachments?: GalleryAttachment[];
+	// The post's primary category plus its ancestors and children, when
+	// the WP plugin supplies it. Enough to build a breadcrumb chain
+	// without fetching the whole taxonomy.
+	term_context?: {
+		self: WPCategory;
+		ancestors: WPCategory[];
+		children: WPCategory[];
+	} | null;
 }
 
 export interface SitemapBundleImage {
@@ -318,6 +326,8 @@ export interface ArchiveBundleArgs {
 	includeDescendants?: boolean;
 	/** Post IDs to omit from the rendered list (display-time only). */
 	excludeIds?: number[];
+	/** Tag ids to resolve hero slots for, server-side, in one query. */
+	heroTagIds?: number[];
 }
 
 export interface ArchiveBundle {
@@ -329,6 +339,14 @@ export interface ArchiveBundle {
 	// HTTP call. Null when no supported SEO plugin is active or its
 	// output isn't reachable.
 	seoHead?: string | null;
+	// The requested term plus its ancestors and direct children, when the
+	// archive is a category. Lets a route build breadcrumbs / detect leaf
+	// categories without fetching every category on the site. Null when
+	// the endpoint predates `term_context` or the archive isn't a term.
+	termContext?: WPCategory[] | null;
+	// Newest post per requested hero tag id (see `heroTagIds`). Null when
+	// none were requested or the endpoint predates `hero_tags`.
+	heroPosts?: Record<number, WPPost> | null;
 }
 
 export interface ResponsiveImageVariant {
