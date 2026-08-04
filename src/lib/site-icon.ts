@@ -1,3 +1,4 @@
+import { joinInflight } from './wp/shared-inflight';
 /**
  * WordPress Site Icon resolution for the first-party favicon routes
  * (/favicon.ico, /apple-touch-icon.png).
@@ -37,9 +38,19 @@ let inflight: Promise<string | null> | null = null;
 export async function getSiteIconUrl(): Promise<string | null> {
 	const now = Date.now();
 	if (cached && cached.expires > now) return cached.url;
-	if (inflight) return inflight;
+	// See lib/wp/shared-inflight.ts - shared promises can outlive their owner.
+	if (inflight) return joinInflight(inflight, fetchIconUrl);
 
-	inflight = (async () => {
+	inflight = fetchIconUrl();
+
+	const url = await inflight;
+	cached = { url, expires: Date.now() + RESOLVE_TTL_MS };
+	inflight = null;
+	return url;
+}
+
+function fetchIconUrl(): Promise<string | null> {
+	return (async () => {
 		try {
 			if (!WP_BASE_URL) return null;
 			const res = await fetch(`${WP_BASE_URL}/wp-json/`, {
@@ -55,11 +66,6 @@ export async function getSiteIconUrl(): Promise<string | null> {
 			return null;
 		}
 	})();
-
-	const url = await inflight;
-	cached = { url, expires: Date.now() + RESOLVE_TTL_MS };
-	inflight = null;
-	return url;
 }
 
 /**

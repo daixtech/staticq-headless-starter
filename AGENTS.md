@@ -329,6 +329,35 @@ convincing, rather than iterating "one more fix" commits on a broken
 `main`. Never attempt to repair a failed deploy through the Cloudflare
 console or by editing build output.
 
+## Module-scope promise caches: join them, never await them
+
+Several fetchers keep an in-flight slot at module scope so concurrent renders
+share one origin call. That slot is shared by every request the isolate
+handles, and **a promise belongs to the request that created it**. When that
+request ends or is cancelled, the runtime cancels its pending I/O - and any
+other request awaiting that promise waits on something that can never settle.
+With no I/O of its own outstanding, the waiter's event loop empties, no
+response is produced, and the runtime kills it:
+
+```
+The Workers runtime canceled this request because it detected that your
+Worker's code had hung and would never generate a response.
+```
+
+Measured on a 10k-URL warmup before this was fixed: 351 such 500s, cpuTime
+peaking at 38ms while wallTime reached 24.9s (idle, not busy), and whole
+batches dying together - 28 of the 41 affected batches failed 10-for-10,
+because a warmup fires many URLs into one isolate and they all join the same
+shared lookups.
+
+So: `if (slot) return slot;` is the bug. Use `joinInflight()` from
+`lib/wp/shared-inflight.ts`, which races the shared promise against a timer
+owned by the current request and re-issues the fetch if it never answers. The
+happy path is unchanged - joiners still pay zero extra calls.
+
+If you add a new cached fetcher, cache the RESOLVED VALUE for reuse and route
+any promise sharing through `joinInflight`.
+
 ## When a page is slow, measure it - don't read code
 
 Send `x-staticq-prof: 1` and the page reports its own breakdown:

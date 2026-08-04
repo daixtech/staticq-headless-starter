@@ -1,3 +1,4 @@
+import { joinInflight, WP_FETCH_TIMEOUT_MS } from './shared-inflight';
 import { assertBaseUrl, WP_FETCH_COOKIE } from './env';
 
 // Cloudflare Bot Fight Mode and WordFence both block requests with
@@ -35,11 +36,33 @@ interface WpFetchResult<T> {
 export async function wpFetchRaw<T>(path: string): Promise<WpFetchResult<T>> {
 	const base = assertBaseUrl();
 	const url = `${base}/wp-json/wp/v2/${path}`;
+
+	// Joining another request's in-flight fetch must never be an unconditional
+	// await - if that request was cancelled, its promise never settles and this
+	// one hangs until the runtime kills it. See lib/wp/shared-inflight.ts.
 	const existing = inflight.get(url) as Promise<WpFetchResult<T>> | undefined;
-	if (existing) return existing;
-	const p = (async () => {
+	if (existing) return joinInflight(existing, () => issue<T>(url));
+
+	const p = issue<T>(url);
+	inflight.set(url, p);
+	return p;
+}
+
+/**
+ * Perform the request. Registered in `inflight` by the caller that owns it;
+ * also used as the fallback when a shared promise is abandoned, in which case
+ * it deliberately does NOT take over the slot - the dead entry is cleared by
+ * whichever call settles first.
+ */
+function issue<T>(url: string): Promise<WpFetchResult<T>> {
+	return (async () => {
 		try {
-			const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
+			const res = await fetch(url, {
+				headers: wpBundleHeaders(),
+				cache: 'no-store',
+				// A stalled origin should reject, not hold the render open.
+				signal: AbortSignal.timeout(WP_FETCH_TIMEOUT_MS),
+			});
 			if (!res.ok) {
 				const body = await res.text().catch(() => '');
 				const snippet = body.replace(/\s+/g, ' ').slice(0, 400);
@@ -53,8 +76,6 @@ export async function wpFetchRaw<T>(path: string): Promise<WpFetchResult<T>> {
 			inflight.delete(url);
 		}
 	})();
-	inflight.set(url, p);
-	return p;
 }
 
 export async function wpFetch<T>(path: string): Promise<T> {

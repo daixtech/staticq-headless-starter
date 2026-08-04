@@ -1,3 +1,4 @@
+import { joinInflight } from './shared-inflight';
 import { WP_BASE_URL, withDecodedName } from './env';
 import { wpBundleHeaders } from './transport';
 import type {
@@ -81,9 +82,20 @@ export async function getSiteConfig(): Promise<SiteConfig | null> {
 	if (siteConfigCache && siteConfigCache.expires > now) {
 		return siteConfigCache.value;
 	}
-	if (siteConfigInflight) return siteConfigInflight;
+	// See lib/wp/shared-inflight.ts: joining a promise owned by another
+	// request can hang this one forever if that request was cancelled.
+	if (siteConfigInflight) return joinInflight(siteConfigInflight, fetchSiteConfig);
 
-	siteConfigInflight = (async () => {
+	siteConfigInflight = fetchSiteConfig();
+
+	const value = await siteConfigInflight;
+	siteConfigCache = { value, expires: Date.now() + SITE_CONFIG_TTL_MS };
+	siteConfigInflight = null;
+	return value;
+}
+
+function fetchSiteConfig(): Promise<SiteConfig | null> {
+	return (async () => {
 		try {
 			if (!WP_BASE_URL) return null;
 			const url = `${WP_BASE_URL}/wp-json/staticq/v1/site-config`;
@@ -105,11 +117,6 @@ export async function getSiteConfig(): Promise<SiteConfig | null> {
 			// slot so the next request after expiry can fetch again.
 		}
 	})();
-
-	const value = await siteConfigInflight;
-	siteConfigCache = { value, expires: Date.now() + SITE_CONFIG_TTL_MS };
-	siteConfigInflight = null;
-	return value;
 }
 
 // ---------------------------------------------------------------------------

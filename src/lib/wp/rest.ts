@@ -1,3 +1,4 @@
+import { joinInflight } from './shared-inflight';
 import { applyCategoryCap, applyPostCap, applyTagCap, withDecodedName } from './env';
 import { wpFetch, wpFetchAllPaged, wpFetchRaw } from './transport';
 import type {
@@ -57,10 +58,15 @@ export async function getCategories(): Promise<WPCategory[]> {
 	if (categoriesCache && categoriesCache.expires > now) {
 		return categoriesCache.value;
 	}
-	if (categoriesInflight) return categoriesInflight;
+	const fetchFresh = () =>
+		wpFetchAllPaged<WPCategory>('categories?per_page=100&hide_empty=false')
+			.then((cats) => applyCategoryCap(cats).map(withDecodedName));
 
-	categoriesInflight = wpFetchAllPaged<WPCategory>('categories?per_page=100&hide_empty=false')
-		.then((cats) => applyCategoryCap(cats).map(withDecodedName));
+	// Never block indefinitely on another request's promise - it may belong to
+	// a cancelled request and never settle. See lib/wp/shared-inflight.ts.
+	if (categoriesInflight) return joinInflight(categoriesInflight, fetchFresh);
+
+	categoriesInflight = fetchFresh();
 
 	try {
 		const value = await categoriesInflight;
@@ -143,11 +149,15 @@ export async function getPagesSlim(): Promise<WPPageSlim[]> {
 	if (pagesSlimCache && pagesSlimCache.expires > now) {
 		return pagesSlimCache.value;
 	}
-	if (pagesSlimInflight) return pagesSlimInflight;
-
-	pagesSlimInflight = wpFetchAllPaged<WPPageSlim>(
+	const fetchFreshPages = () => wpFetchAllPaged<WPPageSlim>(
 		'pages?per_page=100&_fields=id,slug,parent,link,title&orderby=menu_order&order=asc',
 	);
+
+	// See lib/wp/shared-inflight.ts - a shared promise can outlive the
+	// request that owns it and never settle.
+	if (pagesSlimInflight) return joinInflight(pagesSlimInflight, fetchFreshPages);
+
+	pagesSlimInflight = fetchFreshPages();
 
 	try {
 		const value = await pagesSlimInflight;
