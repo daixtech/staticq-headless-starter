@@ -92,9 +92,9 @@ export const SITE_INDEXABLE = envBool('SITE_INDEXABLE', false);
 // caches; SITE_INDEXABLE's false default keeps an unconfigured worker
 // out of search results anyway.
 export const WORKER_ENV = siteStr('WORKER_ENV', 'production');
-// Re-exported from the single swappable flag module (free = false; the Pro
-// staging overlay swaps worker-env.ts for the real check). Consumers keep
-// importing IS_STAGING from '../lib/site' unchanged.
+// Re-exported from the single swappable flag module: false as shipped, and
+// worker-env.ts is the one file to edit for a non-caching preview deploy.
+// Consumers keep importing IS_STAGING from '../lib/site' unchanged.
 export { IS_STAGING } from './worker-env';
 
 export function absoluteUrl(path: string): string {

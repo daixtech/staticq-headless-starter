@@ -10,10 +10,10 @@ import { shouldPassThrough, passThroughToOrigin } from './lib/wp-passthrough';
 // keeps browsers honest so they revalidate via the edge.
 const LONG_EDGE_CACHE = 'public, max-age=0, s-maxage=31536000, must-revalidate';
 
-// Worker identity decides cache behavior: production uses the edge + R2
-// layers; a staging Worker skips them (renders fresh every request).
-// IS_STAGING comes from ./lib/worker-env — false in the free starter,
-// swapped to the real WORKER_ENV check by the Pro staging overlay.
+// Worker identity decides cache behavior: a production Worker uses the edge
+// + R2 layers; a Worker flagged IS_STAGING skips them and renders fresh on
+// every request. IS_STAGING comes from ./lib/worker-env — false as shipped;
+// see that file to enable it for a second, non-caching deploy.
 const STAGING_NO_CACHE = 'no-store, must-revalidate';
 
 // Optional shared-secret cookie that gates access to the whole frontend.
@@ -203,8 +203,8 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 		return next('/404');
 	}
 
-	// No-cache early-exit. Two cases act as if no cache layers exist — the
-	// STAGING worker (WORKER_ENV=staging) and any request on the workers.dev
+	// No-cache early-exit. Two cases act as if no cache layers exist — a
+	// Worker flagged IS_STAGING and any request on the workers.dev
 	// PREVIEW host: every request renders fresh from SSR, with cache-control:
 	// no-store so no intermediary caches it either. Skips the cache.match / R2
 	// lookups AND the cache.put / R2 writeback entirely, so preview/staging
