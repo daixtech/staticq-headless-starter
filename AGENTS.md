@@ -329,6 +329,47 @@ convincing, rather than iterating "one more fix" commits on a broken
 `main`. Never attempt to repair a failed deploy through the Cloudflare
 console or by editing build output.
 
+## When a page is slow, measure it - don't read code
+
+Send `x-staticq-prof: 1` and the page reports its own breakdown:
+
+```
+curl -H "x-staticq-prof: 1" https://your-site/some-post/ -D - -o /dev/null
+```
+
+```
+Server-Timing: frontmatter;dur=841, stream;dur=9934, total;dur=10775, origin;desc="57 calls";dur=34622
+x-staticq-prof: total=10775ms frontmatter=841ms stream=9934ms calls=57 ... | wp/v2/posts=1239ms | ...
+```
+
+How to read it:
+
+- **`calls`** is the first thing to look at. A post or archive page
+  should need a handful of origin requests, not dozens. A cold Worker
+  isolate pays every one of them fresh, so call count - not per-call
+  speed - is what makes a page slow.
+- **`frontmatter`** is the page's own await chain. **`stream`** is
+  component and layout work: Astro streams, so a component's awaits run
+  after the frontmatter resolves. A small frontmatter and a large stream
+  means the cost is inside a component, not the page.
+- The slowest calls are listed by endpoint, so an expensive query names
+  itself.
+
+The mode is inert unless the header is present, and it bypasses both
+cache layers so you always measure a real render - and never write a
+profiled render into R2.
+
+Two findings this replaced hours of guessing with, both of which look
+fine in code review:
+
+- A component fetching every post on the site to find two neighbours -
+  ~104 requests per render, from inside the stream phase.
+- A related-posts query that returned full post objects, so WordPress
+  rendered `content` (and ran `do_shortcode`) for cards that show a
+  thumbnail and a title: 57s versus 1.6s for the same rows.
+
+If you are about to reason about why a page is slow, run this first.
+
 ## Verification playbook (give these to the user - no code reading needed)
 
 - **`https://<worker>.workers.dev`** - always renders fresh, both cache

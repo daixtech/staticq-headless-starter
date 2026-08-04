@@ -57,6 +57,96 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 	const request = ctx.request;
 	const url = new URL(request.url);
 
+	// Profiling mode. Send `x-staticq-prof: 1` and the response reports
+	// where its own time went, as Server-Timing plus a compact
+	// x-staticq-prof header naming the slowest origin calls.
+	//
+	// Why this exists: when a page is slow, the cost is almost never in
+	// your template - it is in how many times the render asks WordPress
+	// for something, and a cold Worker isolate pays every one of those
+	// fresh. From outside you see one slow response and nothing else, so
+	// tuning becomes guesswork. This turns it into a single curl:
+	//
+	//   curl -H "x-staticq-prof: 1" https://your-site/some-post/ -D -
+	//
+	// Read it as: `frontmatter` is the page's own await chain, `stream`
+	// is component and layout work (Astro streams, so their awaits run
+	// after the frontmatter resolves), and `calls` is the number of
+	// origin requests. A high call count is the usual culprit - see the
+	// cost traps in AGENTS.md.
+	//
+	// Safe to leave deployed: it only activates on an explicit request
+	// header, so no visitor and no warmup can trigger it. It bypasses
+	// BOTH cache layers, because a profiled request must render fresh to
+	// mean anything, and must not write what it rendered into R2 (keys
+	// are path-only, so it would overwrite the real object).
+	if (request.headers.get('x-staticq-prof') === '1') {
+		const started = Date.now();
+		const calls: Array<{ label: string; ms: number }> = [];
+		const originalFetch = globalThis.fetch;
+		// Attribution is reliable for one profiled request at a time (the
+		// isolate's fetch is global). Fine for a curl; don't read these
+		// numbers while a warmup is running.
+		globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			const t = Date.now();
+			try {
+				return await originalFetch(input as RequestInfo, init);
+			} finally {
+				const raw = typeof input === 'string'
+					? input
+					: input instanceof URL ? input.href : (input as Request).url;
+				let label = raw;
+				try {
+					const u = new URL(raw);
+					label = u.pathname.replace('/wp-json/', '')
+						+ (u.searchParams.get('slug') ? `?slug=${u.searchParams.get('slug')}` : '')
+						+ (u.searchParams.get('category_id') ? `?cat=${u.searchParams.get('category_id')}` : '');
+				} catch {
+					/* keep the raw URL */
+				}
+				calls.push({ label: label.slice(0, 60), ms: Date.now() - t });
+			}
+		}) as typeof fetch;
+
+		let response: Response;
+		let frontmatterMs = 0;
+		let html = '';
+		try {
+			response = await next();
+			// next() resolves when the frontmatter is done, NOT when the
+			// page has rendered: Astro streams, so component and layout
+			// awaits run while the body is consumed. Measuring only here
+			// would report a 4s frontmatter for a 57s render.
+			frontmatterMs = Date.now() - started;
+			html = await response.text();
+		} finally {
+			globalThis.fetch = originalFetch;
+		}
+
+		const total = Date.now() - started;
+		const fetchMs = calls.reduce((a, c) => a + c.ms, 0);
+		const slowest = [...calls].sort((a, b) => b.ms - a.ms).slice(0, 8);
+		const out = new Response(html, response);
+		out.headers.set(
+			'Server-Timing',
+			[
+				`frontmatter;dur=${frontmatterMs}`,
+				`stream;desc="template + layout";dur=${Math.max(0, total - frontmatterMs)}`,
+				`total;dur=${total}`,
+				`origin;desc="${calls.length} calls";dur=${fetchMs}`,
+			].join(', '),
+		);
+		out.headers.set(
+			'x-staticq-prof',
+			`total=${total}ms frontmatter=${frontmatterMs}ms stream=${total - frontmatterMs}ms `
+			+ `calls=${calls.length} originSum=${fetchMs}ms | `
+			+ slowest.map((c) => `${c.label}=${c.ms}ms`).join(' | '),
+		);
+		out.headers.set('Cache-Control', 'no-store');
+		out.headers.set('x-staticq-cache', 'PROF-NO-CACHE');
+		return out;
+	}
+
 	// Preview host: the workers.dev URL used to review the site before going
 	// live. It runs on the PRODUCTION worker (same script), so IS_STAGING is
 	// false — but we must NOT read or write the edge/R2 cache for it. Preview
