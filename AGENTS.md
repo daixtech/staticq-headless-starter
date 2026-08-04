@@ -329,6 +329,23 @@ convincing, rather than iterating "one more fix" commits on a broken
 `main`. Never attempt to repair a failed deploy through the Cloudflare
 console or by editing build output.
 
+## Never publish a 404 for an origin that didn't answer
+
+A slug lookup has three outcomes, not two: **found**, **absent**, and
+**unavailable**. Collapsing the last two ships "this page does not exist" as
+the answer to a temporary WordPress problem - crawlers believe it, and a cache
+layer can keep serving it after the origin recovers.
+
+Routes classify with `lookup()` from `lib/upstream.ts` and answer an
+unavailable upstream with `upstreamUnavailable()` (503, no-store, Retry-After).
+Only a genuinely absent object gets `Astro.rewrite('/404')`.
+
+Related trap, same root: **do not bound a WP fetch below the slowest honest
+response on your origin.** `WP_FETCH_TIMEOUT_MS` was first set to 15s against
+a ~2.5s median, which looked generous and broke 33 live URLs - pages with heavy
+shortcodes take 6-33s to render cold, and `_fields=content` makes a slug lookup
+pay that full cost. Measure your own origin's tail before lowering it.
+
 ## Module-scope promise caches: join them, never await them
 
 Several fetchers keep an in-flight slot at module scope so concurrent renders

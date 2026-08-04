@@ -1,4 +1,5 @@
 ---
+import { lookup, upstreamUnavailable } from '../lib/upstream';
 import Base from '../layouts/Base.astro';
 import ArticleHero from '../components/ArticleHero.astro';
 import ArticleByline from '../components/ArticleByline.astro';
@@ -79,8 +80,19 @@ if (bundle && bundle.type === 'post') {
 	// Fallback path — keeps the site working against installs that don't
 	// yet expose /staticq/v1/single. Base.astro will fetch the Rank Math
 	// head itself in this branch.
-	post = slug ? await getPostBySlug(slug) : null;
-	page = !post && slug ? await getPageBySlug(slug) : null;
+	// Distinguish absent from unavailable: a timed-out lookup must not be
+	// published as a 404. See lib/upstream.ts.
+	const postLookup = await lookup(() => (slug ? getPostBySlug(slug) : null));
+	if (postLookup.state === 'unavailable') return upstreamUnavailable('post lookup');
+	post = postLookup.state === 'found' ? postLookup.value : null;
+
+	if (!post && slug) {
+		const pageLookup = await lookup(() => getPageBySlug(slug));
+		if (pageLookup.state === 'unavailable') return upstreamUnavailable('page lookup');
+		page = pageLookup.state === 'found' ? pageLookup.value : null;
+	} else {
+		page = null;
+	}
 }
 
 if (!post && !page) {

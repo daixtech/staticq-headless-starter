@@ -80,8 +80,18 @@ export async function joinInflight<T>(
 }
 
 /**
- * Upper bound on a single WP fetch, so a stalled origin surfaces as a
- * rejected promise the caller can degrade on, rather than an open socket the
- * whole render waits behind.
+ * Upper bound on a single WP fetch, so a genuinely stuck socket surfaces as a
+ * rejected promise rather than an open connection the whole render waits
+ * behind.
+ *
+ * MEASURE THIS AGAINST YOUR OWN ORIGIN BEFORE LOWERING IT. It has to sit
+ * above the slowest HONEST response, not above the typical one, or it turns
+ * "slow" into "broken". A first cut at 15s looked generous next to a ~2.5s
+ * median - and broke 33 live URLs, because pages carrying heavy shortcodes
+ * (wpDataTables here) take 6-33s to render on a cold cache. `_fields=content`
+ * makes a slug lookup pay that full render cost.
+ *
+ * This is a backstop, not a performance control: the deadlock it used to
+ * guard against is handled properly by joinInflight() above.
  */
-export const WP_FETCH_TIMEOUT_MS = 15000;
+export const WP_FETCH_TIMEOUT_MS = 45000;

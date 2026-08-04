@@ -1,4 +1,5 @@
 ---
+import { lookup, upstreamUnavailable } from '../lib/upstream';
 import Base from '../layouts/Base.astro';
 import ArticleBody from '../components/ArticleBody.astro';
 import PageBreadcrumb from '../components/PageBreadcrumb.astro';
@@ -38,14 +39,21 @@ if (segments.length < 2) {
 // Resolve by the deepest segment (WP page slugs are unique site-wide,
 // so this resolves the page directly without needing the parent prefix).
 const slug = segments[segments.length - 1];
-const [page, allPages] = await Promise.all([
-	getPageBySlug(slug),
+const [resolved, allPages] = await Promise.all([
+	lookup(() => getPageBySlug(slug)),
 	getPagesSlim().catch(() => [] as WPPageSlim[]),
 ]);
 
-if (!page) {
+// "WordPress didn't answer" is not "this page is gone" - see lib/upstream.ts.
+// Publishing a 404 for a timed-out lookup tells crawlers the URL is dead and
+// can outlive the outage in caches.
+if (resolved.state === 'unavailable') {
+	return upstreamUnavailable('page lookup');
+}
+if (resolved.state === 'absent') {
 	return Astro.rewrite('/404');
 }
+const page = resolved.value;
 
 // Walk the parent chain to validate the URL prefix and build the
 // canonical path + breadcrumb labels. Same defensive pattern as the

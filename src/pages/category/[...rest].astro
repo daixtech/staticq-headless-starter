@@ -1,4 +1,5 @@
 ---
+import { lookup, upstreamUnavailable } from '../../lib/upstream';
 import Base from '../../layouts/Base.astro';
 import StackedCard from '../../components/StackedCard.astro';
 import Pagination from '../../components/Pagination.astro';
@@ -68,10 +69,14 @@ if (slugSegments.length === 0) {
 // categories across 7 paginated requests is unreliable enough on this
 // origin that we MUST NOT depend on it for the lookup itself.
 const slug = slugSegments[slugSegments.length - 1];
-const category = await getCategoryBySlug(slug);
-if (!category) {
+const categoryLookup = await lookup(() => getCategoryBySlug(slug));
+if (categoryLookup.state === 'unavailable') {
+	return upstreamUnavailable('category lookup');
+}
+if (categoryLookup.state === 'absent') {
 	return Astro.rewrite('/404');
 }
+const category = categoryLookup.value;
 
 // Hero eligibility has two halves: the ROOT must be opted in, and the
 // category must be a leaf. The root half is already in the URL - the
