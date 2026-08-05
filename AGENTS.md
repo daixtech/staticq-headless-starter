@@ -16,7 +16,7 @@ code that ignores it fails **silently** (pages go stale - no errors).
 
 ```
 WordPress + StaticQ Headless plugin        (content, config, cache events)
-   │ REST: /wp-json/wp/v2/* and /wp-json/staticq/v1/*
+   │ REST: /wp-json/wp/v2/* and /wp-json/sqheadless/v1/*
    ▼
 THIS REPO → GitHub Actions → Astro frontend Worker   (renders pages)
                                   │ writes/reads
@@ -107,7 +107,7 @@ adding fetchers:
 - `env.ts` - `WP_BASE_URL`, `WP_FETCH_COOKIE` (WAF bypass cookie).
 - `transport.ts` - fetch headers, in-flight dedup, paging.
 - `rest.ts` - standard `/wp-json/wp/v2/*` reads.
-- `bundles.ts` - one-shot `/wp-json/staticq/v1/*` bundle endpoints served
+- `bundles.ts` - one-shot `/wp-json/sqheadless/v1/*` bundle endpoints served
   by the plugin (prefer these; they exist to avoid N+1 REST calls):
   `site-config` (brand/logo/nav/indexable), `homepage`, `single?slug=`,
   `archive?…` (slot-stable pages), `sitemap`, author bundle.
@@ -241,10 +241,10 @@ the fragment its own URL, loaded client-side, in one of two flavors:
 Ask the user (or infer) which freshness they need; default to the TTL
 flavor when unsure - it's simpler and self-maintaining.
 
-**Add a data endpoint:** prefer an existing `staticq/v1` bundle. If WP
+**Add a data endpoint:** prefer an existing `sqheadless/v1` bundle. If WP
 needs to expose something new, give the user PHP for **their own
 mu-plugin** - never an edit to the StaticQ plugin - registering a route
-under **their own REST namespace** (e.g. `mysite/v1`; `staticq/v1` belongs
+under **their own REST namespace** (e.g. `mysite/v1`; `sqheadless/v1` belongs
 to the plugin and future updates could collide). Batched - one request per
 page render, not N+1 - plus a typed fetcher module here re-exported from
 `lib/wp.ts`.

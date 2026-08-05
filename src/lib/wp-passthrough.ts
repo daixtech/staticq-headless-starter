@@ -1,12 +1,32 @@
 // Reverse-proxy passthrough for the headless Worker.
 //
-// When the Worker runs on a *route* (example.com/*) in front of the
-// WordPress origin, the requests WordPress must handle itself — admin,
-// login, REST, cron, wp-content, feeds, sitemaps, and every write — are
-// forwarded to origin with fetch(request). Cloudflare sends a subrequest
-// to the Worker's own route to the origin instead of re-invoking the
-// Worker, so this is a transparent pass-through. Anything NOT matched here
-// is rendered by Astro.
+// The requests WordPress must handle itself — admin, login, REST, cron,
+// wp-content, feeds, sitemaps, and every write — are forwarded to it.
+// Anything NOT matched here is rendered by Astro.
+//
+// HOW THE FORWARD IS ADDRESSED depends on where WordPress lives relative to
+// this Worker, and getting it wrong produces a 522 with no other symptom:
+//
+//   Same host (Worker on example.com/*, WordPress the origin behind it):
+//     re-fetch the SAME url. Cloudflare sends a subrequest that matches the
+//     Worker's own route to the origin rather than re-invoking the Worker,
+//     so this is a transparent proxy and WordPress sees its own hostname.
+//
+//   Different host (Worker on headless.example.com, WordPress on
+//     www.example.com): re-fetching the same url asks Cloudflare for the
+//     origin behind THIS hostname — and a hostname that exists only to carry
+//     a Worker route has no origin at all. Cloudflare tries to connect,
+//     finds nothing, and answers 522. So address WordPress directly.
+//
+// Both cases are handled below; the split-host branch is what makes
+// passthrough work before a domain cutover, when the frontend is still on
+// its own subdomain.
+//
+// KNOWN LIMIT: cookies are host-scoped. Front-end paths proxy correctly
+// across hosts, but /wp-admin will not — WordPress sets its session cookies
+// for its own hostname, so a login through the frontend host cannot stick.
+// Cross-domain admin proxying is out of scope; use the WordPress hostname
+// directly for admin.
 //
 // The defaults below MUST stay a superset of the known-safe WordPress
 // surface. Operators can extend them with the SQHEADLESS-managed
@@ -111,15 +131,16 @@ export function shouldPassThrough(request: Request, url: URL): boolean {
 }
 
 /**
- * Forward the request to the WordPress origin. Cloudflare routes a
- * same-route subrequest to origin (not back into this Worker), so this is a
- * transparent proxy. The origin response is passed through unchanged, so
- * WordPress's own cache-control wins: cacheable assets/feeds/sitemaps stay
- * cacheable at the edge, while admin/REST/preview responses carry their own
- * no-store from WordPress.
+ * Forward the request to WordPress. The response is passed through
+ * unchanged, so WordPress's own cache-control wins: cacheable
+ * assets/feeds/sitemaps stay cacheable at the edge, while admin/REST/preview
+ * responses carry their own no-store from WordPress.
+ *
+ * See the note at the top of this file for why the target is sometimes the
+ * same url and sometimes WP_BASE_URL.
  */
 export async function passThroughToOrigin(request: Request): Promise<Response> {
-	const response = await fetch(request);
+	const response = await fetch(originRequest(request));
 	const headers = new Headers(response.headers);
 	headers.set('x-staticq-proxy', 'origin');
 	return new Response(response.body, {
@@ -127,4 +148,34 @@ export async function passThroughToOrigin(request: Request): Promise<Response> {
 		statusText: response.statusText,
 		headers,
 	});
+}
+
+/**
+ * The request to actually send upstream.
+ *
+ * Same-host: hand back the original, so Cloudflare's same-route subrequest
+ * reaches the origin with every header WordPress expects, its own Host
+ * included.
+ *
+ * Split-host: rebuild it against WP_BASE_URL. `new Request(dest, request)`
+ * carries the method, headers and body over, and takes Host from the new
+ * url — which is what WordPress needs to serve the page rather than issue a
+ * canonical redirect back to itself.
+ *
+ * If WP_BASE_URL is unset or unparseable we fall through to the original
+ * request: no worse than before, and the same-host case is the one that
+ * works without configuration.
+ */
+function originRequest(request: Request): Request {
+	const base = envStr('WP_BASE_URL', '');
+	if (!base) return request;
+
+	try {
+		const here = new URL(request.url);
+		const wp = new URL(base);
+		if (!wp.host || wp.host === here.host) return request;
+		return new Request(new URL(here.pathname + here.search, wp.origin), request);
+	} catch {
+		return request;
+	}
 }
