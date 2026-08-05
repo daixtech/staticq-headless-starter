@@ -108,7 +108,7 @@ export async function getPageBySlug(slug: string): Promise<WPPage | null> {
 	return pages[0] ?? null;
 }
 
-// Fetch the custom REST fields the /staticq/v1/single bundle endpoint
+// Fetch the custom REST fields the /sqheadless/v1/single bundle endpoint
 // doesn't expose (it strips register_rest_field additions). One small
 // REST call per post when bundle is the data source; no-op when the
 // caller already has them from the standard REST path.

@@ -10,7 +10,7 @@ const WP_USER_AGENT =
 // Shared request headers for every WP call — the browser-shaped User-Agent,
 // a JSON Accept, and the optional shared-secret cookie that lets Worker
 // traffic through the WP-side WAF. Centralized here so the ~8 fetch sites
-// (wpFetchRaw + each staticq/v1 bundle endpoint + seo-head) stay in sync.
+// (wpFetchRaw + each sqheadless/v1 bundle endpoint + seo-head) stay in sync.
 export function wpBundleHeaders(): Record<string, string> {
 	const headers: Record<string, string> = {
 		'User-Agent': WP_USER_AGENT,

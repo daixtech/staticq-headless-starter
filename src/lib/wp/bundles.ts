@@ -30,7 +30,7 @@ export async function getAuthorBundle(
 		const params = new URLSearchParams();
 		params.set('author_slug', slug);
 		if (page !== null) params.set('page', String(page));
-		const url = `${WP_BASE_URL}/wp-json/staticq/v1/archive?${params.toString()}`;
+		const url = `${WP_BASE_URL}/wp-json/sqheadless/v1/archive?${params.toString()}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as {
@@ -98,7 +98,7 @@ function fetchSiteConfig(): Promise<SiteConfig | null> {
 	return (async () => {
 		try {
 			if (!WP_BASE_URL) return null;
-			const url = `${WP_BASE_URL}/wp-json/staticq/v1/site-config`;
+			const url = `${WP_BASE_URL}/wp-json/sqheadless/v1/site-config`;
 			const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 			if (!res.ok) return null;
 			const data = (await res.json()) as SiteConfig;
@@ -149,7 +149,7 @@ export async function getHomepageBundle(): Promise<HomepageBundle | null> {
 		// the one request that gets served stale to the (anonymous) Worker. A
 		// unique param per render keeps it fresh. The durable fix is to exclude
 		// /wp-json from that origin cache, after which this is belt-and-braces.
-		const url = `${WP_BASE_URL}/wp-json/staticq/v1/homepage?_cb=${Date.now()}`;
+		const url = `${WP_BASE_URL}/wp-json/sqheadless/v1/homepage?_cb=${Date.now()}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as HomepageBundle;
@@ -176,7 +176,7 @@ export async function getHomepageBundle(): Promise<HomepageBundle | null> {
 // ---------------------------------------------------------------------------
 
 // One-shot fetch of a post (or page) + its SEO head fragment from
-// the /staticq/v1/single endpoint. Returns null when the slug doesn't
+// the /sqheadless/v1/single endpoint. Returns null when the slug doesn't
 // match (HTTP 404), when the endpoint is missing on the WP install,
 // when the response is malformed, or on any network failure — callers
 // fall back to the per-call getPostBySlug + getPageBySlug + Rank Math
@@ -194,7 +194,7 @@ export async function getHomepageBundle(): Promise<HomepageBundle | null> {
 export async function getSingleBundle(slug: string): Promise<SingleBundle | null> {
 	try {
 		if (!WP_BASE_URL || !slug) return null;
-		const url = `${WP_BASE_URL}/wp-json/staticq/v1/single?slug=${encodeURIComponent(slug)}`;
+		const url = `${WP_BASE_URL}/wp-json/sqheadless/v1/single?slug=${encodeURIComponent(slug)}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as SingleBundle;
@@ -226,7 +226,7 @@ export async function getSingleBundle(slug: string): Promise<SingleBundle | null
 export async function getSitemapBundle(): Promise<SitemapBundle | null> {
 	try {
 		if (!WP_BASE_URL) return null;
-		const url = `${WP_BASE_URL}/wp-json/staticq/v1/sitemap`;
+		const url = `${WP_BASE_URL}/wp-json/sqheadless/v1/sitemap`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as SitemapBundle;
@@ -251,7 +251,7 @@ export async function getSitemapBundle(): Promise<SitemapBundle | null> {
 // ---------------------------------------------------------------------------
 
 // One-shot fetch of a slot-stable archive page (home / category / tag,
-// live or sealed) from the WP `/staticq/v1/archive` endpoint. Returns
+// live or sealed) from the WP `/sqheadless/v1/archive` endpoint. Returns
 // `null` when the endpoint is missing (404), returns a non-200, returns
 // invalid JSON, or the origin is unreachable — callers fall back to the
 // default WP REST path in that case. Never throws.
@@ -289,7 +289,7 @@ export async function getArchiveBundle(
 			params.set('hero_tags', args.heroTagIds.join(','));
 		}
 		const qs = params.toString();
-		const url = `${WP_BASE_URL}/wp-json/staticq/v1/archive${qs ? `?${qs}` : ''}`;
+		const url = `${WP_BASE_URL}/wp-json/sqheadless/v1/archive${qs ? `?${qs}` : ''}`;
 		const res = await fetch(url, { headers: wpBundleHeaders(), cache: 'no-store' });
 		if (!res.ok) return null;
 		const data = (await res.json()) as {

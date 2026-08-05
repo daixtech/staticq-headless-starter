@@ -47,7 +47,7 @@ if (slug === 'home') {
 }
 
 // Posts and pages share the root namespace (matches WP permalink structure).
-// Preferred path: the /staticq/v1/single bundle endpoint returns the post
+// Preferred path: the /sqheadless/v1/single bundle endpoint returns the post
 // + Rank Math head in ONE call, with no `_embed=1` wp:attachment fan-out.
 // On gallery posts this is the difference between 1s and 50s. Falls back
 // to the per-call getPostBySlug + getPageBySlug path when the bundle is
@@ -78,7 +78,7 @@ if (bundle && bundle.type === 'post') {
 	page = slug ? await getPageBySlug(slug) : null;
 } else {
 	// Fallback path — keeps the site working against installs that don't
-	// yet expose /staticq/v1/single. Base.astro will fetch the Rank Math
+	// yet expose /sqheadless/v1/single. Base.astro will fetch the Rank Math
 	// head itself in this branch.
 	// Distinguish absent from unavailable: a timed-out lookup must not be
 	// published as a 404. See lib/upstream.ts.
@@ -122,7 +122,7 @@ const author = post ? getAuthorName(post) : undefined;
 const category = post ? getPrimaryCategory(post) : null;
 
 // Breadcrumb chain + subtitle for posts. Two custom REST fields aren't
-// surfaced by the /staticq/v1/single bundle endpoint (it strips
+// surfaced by the /sqheadless/v1/single bundle endpoint (it strips
 // register_rest_field additions): `primary_category` (drives breadcrumb
 // chain) and `subtitle` (renders below H1). When the bundle was the
 // data source, we fetch both in one small follow-up call. When the post

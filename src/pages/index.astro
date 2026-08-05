@@ -26,7 +26,7 @@ if (searchTerm !== null) {
 // Home renders the newest posts (slot-stable live page: the 10..19 newest)
 // with slot-stable pagination at the bottom — see doc/reversed-pagination.md.
 //
-// Preferred path: one call to the WP custom `/staticq/v1/homepage`
+// Preferred path: one call to the WP custom `/sqheadless/v1/homepage`
 // endpoint that returns the live posts + layout + Rank Math head in a
 // single round-trip. Fallback path: getHomeArchive against default WP
 // REST, for installs that don't expose the custom endpoint.

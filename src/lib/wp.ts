@@ -11,7 +11,7 @@
 //   wp/rest.ts        — standard wp/v2 reads (posts, categories, tags, pages)
 //   wp/hero.ts        — optional leaf-category hero strip (config-driven)
 //   wp/archive.ts     — slot-stable archive fetchers + search
-//   wp/bundles.ts     — staticq/v1/* one-shot bundle endpoints
+//   wp/bundles.ts     — sqheadless/v1/* one-shot bundle endpoints
 //   wp/seo.ts         — SEO plugin <head> fragment fetch
 //   wp/images.ts      — featured / responsive image helpers
 //   wp/display.ts     — author name, primary category, date, reading time
@@ -58,7 +58,7 @@ export {
 	getHomeArchive,
 } from './wp/archive';
 
-// staticq/v1 bundle endpoints.
+// sqheadless/v1 bundle endpoints.
 export {
 	getAuthorBundle,
 	getSiteConfig,

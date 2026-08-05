@@ -8,7 +8,7 @@ import { getAuthorBundle } from '../../lib/wp';
 //   /author/<slug>/                  → live page (newest 10..19)
 //   /author/<slug>/page/N/           → sealed page N (1-indexed, oldest first)
 //
-// Author archives go through the /staticq/v1/archive bundle endpoint
+// Author archives go through the /sqheadless/v1/archive bundle endpoint
 // with author_slug — the plugin resolves the slug via get_user_by()
 // in PHP, sidestepping the wp/v2/users endpoint which AIOSEO and
 // similar security plugins block under aios_user_lists_forbidden.

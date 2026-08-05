@@ -75,7 +75,7 @@ function urlNode({ loc, lastmod, changefreq, priority, image }: UrlEntry): strin
 // consolidated <urlset>. Net effect: the SEO plugin owns the editorial URL
 // selection (with all its admin-configured filters); Astro owns
 // emission. When no SEO-plugin sitemap is reachable we fall back to our
-// own /staticq/v1/sitemap bundle (see below).
+// own /sqheadless/v1/sitemap bundle (see below).
 //
 // Sanitization comes for free — we never copy raw bytes through. Any
 // leading whitespace, wrong content-type, BOM, or stray PHP output in
@@ -269,7 +269,7 @@ function seoSitemapUrlNode(entry: SeoSitemapUrlEntry): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fallback path — our custom /staticq/v1/sitemap bundle.
+// Fallback path — our custom /sqheadless/v1/sitemap bundle.
 // ---------------------------------------------------------------------------
 //
 // Used when the SEO-plugin sitemap proxy returns zero entries (no

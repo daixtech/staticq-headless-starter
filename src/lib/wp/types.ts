@@ -128,7 +128,7 @@ export interface WPPage {
 	_embedded?: WPEmbedded;
 }
 
-// Fetch the custom REST fields the /staticq/v1/single bundle endpoint
+// Fetch the custom REST fields the /sqheadless/v1/single bundle endpoint
 // doesn't expose (it strips register_rest_field additions). Currently
 // `primary_category` (for breadcrumb chain construction) and `subtitle`
 // (for card + hero subtitle line). Both addressed in Endpoints::register().
@@ -154,7 +154,7 @@ export interface WPPageSlim {
 
 // Author archive types. The plugin's URL engine emits `/author/<slug>/`
 // (live) and `/author/<slug>/page/<N>/` (sealed slot-stable pages); both
-// resolve via the /staticq/v1/archive bundle endpoint's `author_slug`
+// resolve via the /sqheadless/v1/archive bundle endpoint's `author_slug`
 // param. Direct wp/v2/users lookup is blocked by AIOSEO (and similar
 // security plugins) under the `aios_user_lists_forbidden` code, so the
 // plugin side resolves authors via get_user_by() in PHP and returns the

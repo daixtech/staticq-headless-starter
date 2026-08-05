@@ -43,7 +43,7 @@ export async function getHomeFallbackHeadIfThin(
 // `null` when nothing is available. Never throws.
 //
 // Primary source is the plugin's own plugin-agnostic endpoint
-// `/wp-json/staticq/v1/seo-head?url=…`, which resolves via Rank Math or
+// `/wp-json/sqheadless/v1/seo-head?url=…`, which resolves via Rank Math or
 // Yoast server-side. For older plugin builds that predate that route we
 // fall back once to Rank Math's `/wp-json/rankmath/v1/getHead`.
 export async function getSeoHead(url: string): Promise<string | null> {
@@ -62,7 +62,7 @@ export async function getSeoHead(url: string): Promise<string | null> {
 		// Neutral plugin endpoint (Rank Math + Yoast). null result means
 		// "resolved, but no head"; a thrown/404 means "route missing".
 		try {
-			const endpoint = `${WP_BASE_URL}/wp-json/staticq/v1/seo-head?url=${encodeURIComponent(url)}`;
+			const endpoint = `${WP_BASE_URL}/wp-json/sqheadless/v1/seo-head?url=${encodeURIComponent(url)}`;
 			const res = await fetch(endpoint, { headers, cache: 'no-store' });
 			if (res.ok) {
 				const data = (await res.json()) as { seo_head?: string | null };
