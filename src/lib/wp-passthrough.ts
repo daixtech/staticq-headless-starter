@@ -45,6 +45,17 @@ const DEFAULT_SUFFIXES = ['/feed/', '/feed'];
 
 // Core (/wp-sitemap*.xml) and SEO-plugin (/sitemap_index.xml, *-sitemap.xml)
 // sitemaps → origin.
+// Sitemaps THIS WORKER renders itself, from its own route files. They must
+// never be forwarded: the passthrough check runs before routing, so a match
+// here means the route file is dead code and the visitor gets whatever the
+// origin says — which for these paths is a 301 or a 404, and the 301 is what
+// surfaces as a 522.
+//
+// Keep this in sync with src/pages/*sitemap*.xml.ts. Anything sitemap-shaped
+// that this Worker does NOT implement (/wp-sitemap*.xml from core,
+// /sitemap_index.xml from an SEO plugin) still belongs to the origin.
+const OWN_SITEMAPS = new Set(['/sitemap.xml']);
+
 const SITEMAP_RE = /^\/wp-sitemap.*\.xml$|^\/sitemap(_index)?\.xml$|-sitemap\.xml$/i;
 
 // Query params that always denote content WordPress must resolve. NOTE: `s`
@@ -83,7 +94,7 @@ export function shouldPassThrough(request: Request, url: URL): boolean {
 	for (const p of DEFAULT_PREFIXES) if (path.startsWith(p)) return true;
 	for (const p of DEFAULT_EXACT) if (path === p) return true;
 	for (const s of DEFAULT_SUFFIXES) if (path.endsWith(s)) return true;
-	if (SITEMAP_RE.test(path)) return true;
+	if (SITEMAP_RE.test(path) && !OWN_SITEMAPS.has(path)) return true;
 	for (const q of DEFAULT_QUERY_PARAMS) if (url.searchParams.has(q)) return true;
 
 	// Operator-supplied extras appended to the built-in list. An entry
