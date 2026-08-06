@@ -22,6 +22,12 @@ const STAGING_NO_CACHE = 'no-store, must-revalidate';
 // and the visitor gate can rotate independently.
 const SITE_GATE_COOKIE = envStr('SITE_GATE_COOKIE');
 
+// Shared-secret cookie that switches ONE browser to the WordPress theme
+// instead of this frontend, so a page can be compared side by side during a
+// migration. Format `name=value`, same shape as the gate above. Empty (the
+// default) means the escape hatch does not exist at all.
+const THEME_PREVIEW_COOKIE = envStr('THEME_PREVIEW_COOKIE');
+
 interface BoundEnv {
 	PAGES?: R2Bucket;
 	// CF Pages ASSETS binding. Auto-injected by the Astro Cloudflare
@@ -187,6 +193,31 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 					'x-staticq-gate': 'denied',
 				},
 			});
+		}
+	}
+
+	// Theme-comparison escape hatch. Deliberately placed AFTER the site gate
+	// (so it can never be used to get past it) and BEFORE every cache path
+	// below, which is what makes the "never cached" half true structurally
+	// rather than by flag: returning here skips the cache.match / R2 read AND
+	// the cache.put / R2 writeback entirely, so a preview response can never
+	// be stored, and can never be served to anyone else.
+	//
+	// no-store on the way out stops Cloudflare and the browser keeping it
+	// either. Without that, one preview could poison the URL for real
+	// visitors - the whole point is that this is invisible to everyone but
+	// the person holding the cookie.
+	//
+	// Note the origin copy may itself be edge-cached; this shows what
+	// WordPress currently serves, not necessarily a fresh render.
+	if (THEME_PREVIEW_COOKIE) {
+		const cookieHeader = request.headers.get('cookie') ?? '';
+		if (cookieHeader.includes(THEME_PREVIEW_COOKIE)) {
+			const origin = await passThroughToOrigin(request);
+			const preview = new Response(origin.body, origin);
+			preview.headers.set('Cache-Control', 'no-store');
+			preview.headers.set('x-staticq-cache', 'THEME-NO-CACHE');
+			return preview;
 		}
 	}
 
