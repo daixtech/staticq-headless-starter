@@ -36,9 +36,30 @@
 import { envStr } from './runtime-env';
 
 // Path prefixes: pathname starts with one of these → origin.
-// /wp-content is here, but the more-specific media Worker route
-// (/wp-content/uploads/*) intercepts uploads first, so in practice this
-// only forwards /wp-content/plugins, /themes, /mu-plugins to origin.
+//
+// /wp-content is here on the assumption that a more-specific media Worker
+// route (/wp-content/uploads/*) intercepts uploads BEFORE this Worker sees
+// them, leaving only /wp-content/plugins, /themes and /mu-plugins to forward.
+//
+// THAT ASSUMPTION IS LOAD-BEARING, AND IT BREAKS AT A DOMAIN CUTOVER. Only
+// one Worker runs per request, and the passthrough below reaches origin
+// directly - it cannot fall through to another Worker. So if this Worker
+// wins the route for an upload, the request goes to WordPress, which does
+// not have the file when media lives in R2. Every image 404s.
+//
+// Cloudflare ranks an EXACT-host route above a WILDCARD-host one even when
+// the wildcard has the longer path, so this loses:
+//
+//     *example.com/wp-content/uploads/*     media Worker
+//     www.example.com/*                     this Worker   <- wins
+//
+// Give the media Worker an exact-host route (www.example.com/wp-content/
+// uploads/*) and it wins on path length instead. Observed on a live cutover.
+//
+// Do NOT "fix" this by removing /wp-content/ from the list: this Worker
+// would then try to RENDER the image path and serve the 404 template, and it
+// cannot serve the file either - the media bucket is bound to the media
+// Worker, not to this one.
 const DEFAULT_PREFIXES = [
 	'/wp-admin/',
 	'/wp-includes/',
