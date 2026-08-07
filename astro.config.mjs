@@ -42,4 +42,49 @@ export default defineConfig({
 	session: {
 		driver: sessionDrivers.lruCache(),
 	},
+	// Stable stylesheet filenames - no content hash. See the note below.
+	vite: {
+		build: {
+			rollupOptions: {
+				output: {
+					assetFileNames: '_astro/[name][extname]',
+				},
+			},
+		},
+	},
 });
+
+// WHY ASSETS ARE NOT CONTENT-HASHED
+// ---------------------------------
+// Rendered HTML lives in R2 and the edge cache for a long time, and a Worker
+// deploy does not touch it. What a deploy DOES replace, wholesale, is the
+// static-asset manifest: a file whose content changed is uploaded under a new
+// hashed name and the OLD name stops being served. Cached pages go on
+// referencing the old name and get a 404 for it.
+//
+// With a per-page stylesheet that only breaks that page. Base.css is on every
+// page, so a single design tweak strips the CSS from the entire cached site
+// until every page has been re-rendered - which on a large archive means a
+// full warmup run per deploy. The deploy reports success and the assets are
+// correct; only visitors on cached pages see it. Observed live on a cutover.
+//
+// Stable names decouple the two: cached HTML keeps resolving, and simply
+// picks up the current CSS. Cache-busting moves from the filename to
+// revalidation, which is already in place - /_astro/* is served with a short
+// max-age plus an ETag, so a changed file is refetched within minutes rather
+// than being pinned by an immutable year-long TTL.
+//
+// TWO THINGS TO KNOW BEFORE CHANGING THIS
+//
+// 1. Basenames must stay unique. Without a hash, two source stylesheets with
+//    the same basename collide, and Rollup disambiguates with a numeric
+//    suffix that can move between builds - reintroducing the same bug with a
+//    harder-to-spot cause.
+//
+// 2. This covers CSS (and fonts/images); JS chunks keep their hashes, set by
+//    chunkFileNames/entryFileNames. That is deliberate. Stale HTML pulling a
+//    newer JS chunk can hit a changed module graph, which fails at runtime -
+//    worse than the missing-file case. This starter ships no client JS, so
+//    the exposure is nil today. If you add hydrated islands, a deploy that
+//    changes their chunks will break them on already-cached pages, and the
+//    fix there is to purge and re-warm on deploy, not to unhash the JS.

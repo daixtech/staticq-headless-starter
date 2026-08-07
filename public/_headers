@@ -1,0 +1,26 @@
+# Cache headers for Cloudflare static assets.
+#
+# This rule EXISTS TO SUPPRESS the Cloudflare adapter's default, which is
+#
+#     /_astro/*
+#       Cache-Control: public, max-age=31536000, immutable
+#
+# The adapter injects that on every build unless _headers already sets
+# Cache-Control on a matching rule - so this file must keep a /_astro/*
+# rule with a Cache-Control line, or the immutable default comes back
+# silently at the next build.
+#
+# Why the default is wrong here: assets in this project are NOT
+# content-hashed (see astro.config.mjs for the reasoning). `immutable`
+# tells the browser never to revalidate for a year, so with stable
+# filenames a visitor who loaded the old stylesheet would keep it
+# indefinitely and never see a design change. Hashed filenames are what
+# make `immutable` safe, and we gave them up deliberately.
+#
+# max-age is therefore short, and stale-while-revalidate keeps it cheap:
+# past 5 minutes the browser serves the cached copy immediately and
+# refetches in the background, so nobody waits on the network and the
+# update lands on the next view. Responses carry an ETag, so the
+# revalidation is a 304 with no body in the common case.
+/_astro/*
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
