@@ -75,6 +75,30 @@ or it goes stale forever.
   pushes them via the CF API. Never hardcode bindings, vars, or secrets in
   wrangler config in this repo; never remove the inject step or
   `--keep-vars`.
+- `src/lib/asset-archive.ts` + `scripts/archive-assets.mjs` - **assets
+  outlive the build that produced them.** A deploy replaces the
+  static-asset manifest wholesale, so an asset whose content changed ships
+  under a new hash and the old name stops being served - but the HTML
+  referencing it is cached in R2 and at the edge, untouched by the deploy,
+  and keeps requesting it. One shared stylesheet is on every page, so a
+  single design change unstyles the entire cached site until every page is
+  re-rendered. The archive step uploads each build's `/_astro/` output to
+  R2 under the `assets` prefix, and the middleware serves from there on a
+  manifest miss. Rules:
+  - The archive step runs **after** `inject-live-bindings` (that is where
+    the PAGES bucket name comes from) and **before** `wrangler deploy`
+    (uploading after leaves a window with the new Worker live and the
+    previous build's assets already gone).
+  - It must stay non-fatal. A deploy that skips archiving is the old
+    behaviour; failing the deploy would be worse than the cosmetic
+    breakage it prevents.
+  - Keep the content hashes. They are what makes `immutable` correct and
+    what guarantees a cached page gets CSS from its own build. Do not
+    "fix" a missing asset by switching to stable filenames - that
+    reintroduces mixed-build rendering and makes `immutable` unsafe.
+  - Archive keys sit under `assets`, page keys under `pages`. Nothing
+    enumerates or bulk-deletes the bucket, so purges and warmups leave the
+    archive alone. Keep it that way.
 
 ## URL families (the shapes both sides agree on)
 

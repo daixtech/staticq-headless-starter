@@ -85,6 +85,22 @@ jobs:
           WORKER_NAME:           ${{ vars.WORKER_NAME }}
         run: node scripts/inject-live-bindings.mjs
 
+      # Archive this build's hashed assets to R2 before the deploy swaps the
+      # manifest. A deploy deletes the assets it replaced, but the HTML
+      # referencing them stays cached in R2/edge and keeps requesting them —
+      # so without this, one changed stylesheet unstyles every already-cached
+      # page until it is re-rendered. The Worker serves archived assets on a
+      # manifest miss (src/lib/asset-archive.ts).
+      #
+      # Runs AFTER inject-live-bindings (which is where the PAGES bucket name
+      # comes from) and BEFORE the deploy (so the archive is never behind the
+      # live manifest). Never fails the deploy — see the script's header.
+      - name: Archive build assets to R2
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/archive-assets.mjs
+
       # Deploy. --name overrides the adapter's generated name so a single
       # starter codebase can power multiple WP sites on one CF account:
       # each site's plugin sets its own WORKER_NAME. --keep-vars preserves

@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware';
 import { env as workersEnv } from 'cloudflare:workers';
+import { ASSET_PATH_PREFIX, serveArchivedAsset } from './lib/asset-archive';
 import { pathToKey } from './lib/cache-key';
 import { envStr } from './lib/runtime-env';
 import { IS_STAGING } from './lib/worker-env';
@@ -174,6 +175,31 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
 
 	if (request.method !== 'GET' && request.method !== 'HEAD') {
 		return next();
+	}
+
+	// Assets from an earlier build, served out of R2. See lib/asset-archive.ts
+	// for why this exists; in short, a deploy deletes the hashed assets it
+	// replaced, but the HTML referencing them stays cached and keeps asking.
+	//
+	// Reaching this line already means the current build does NOT have the
+	// file — Cloudflare's ASSETS handler answers first and never invokes the
+	// Worker for a live asset — so there is no hot-path cost.
+	//
+	// Placed BEFORE the visitor gate deliberately: live assets bypass the
+	// middleware entirely, so they were never gated, and gating only the
+	// archived ones would break styling on exactly the pages the gate is
+	// meant to show. Placed before the cache layers too — these objects are
+	// immutable and already in R2, so routing them through the page cache
+	// would just duplicate them under a second key.
+	if (url.pathname.startsWith(ASSET_PATH_PREFIX)) {
+		const archived = await serveArchivedAsset(
+			url.pathname,
+			(workersEnv as BoundEnv).PAGES,
+		);
+		if (archived) return archived;
+		// Not in the archive either: fall through to normal routing, which
+		// ends in Astro's 404 — the same thing that happened before the
+		// archive existed.
 	}
 
 	// Visitor gate. Runs before the cache lookup so an authorized hit can't
