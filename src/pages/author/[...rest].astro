@@ -3,6 +3,8 @@ import Base from '../../layouts/Base.astro';
 import OverlayCard from '../../components/OverlayCard.astro';
 import Pagination from '../../components/Pagination.astro';
 import { getAuthorBundle } from '../../lib/wp';
+import { probeOrigin } from '../../lib/origin-redirect-probe';
+import { upstreamUnavailable } from '../../lib/upstream';
 
 // URL shapes supported:
 //   /author/<slug>/                  → live page (newest 10..19)
@@ -41,6 +43,16 @@ if (slugSegments.length !== 1) {
 const slug = slugSegments[0];
 const bundle = await getAuthorBundle(slug, pageNum);
 if (!bundle) {
+	// Empty lookup. Ask the origin before publishing a 404 - a
+	// successful-but-EMPTY result is indistinguishable from a deletion here.
+	// See lib/origin-redirect-probe.ts.
+	const verdict = await probeOrigin(Astro.url.pathname, Astro.url.search);
+	if (verdict.kind === 'redirect') {
+		return Astro.redirect(verdict.location, verdict.status);
+	}
+	if (verdict.kind === 'exists') {
+		return upstreamUnavailable('author resolved empty but origin serves this path');
+	}
 	return Astro.rewrite('/404');
 }
 const { author, posts, layout, seoHead } = bundle;

@@ -8,6 +8,8 @@ import {
 	getTagBySlug,
 } from '../../../lib/wp';
 import type { BreadcrumbItem } from '../../../lib/breadcrumb';
+import { probeOrigin } from '../../../lib/origin-redirect-probe';
+import { upstreamUnavailable } from '../../../lib/upstream';
 
 // URL shape:
 //   /tag/foo/             → live page (newest 10..19)
@@ -32,6 +34,16 @@ if (!slug) {
 
 const tag = await getTagBySlug(slug);
 if (!tag) {
+	// Empty lookup. Ask the origin before publishing a 404 - a
+	// successful-but-EMPTY result is indistinguishable from a deletion here.
+	// See lib/origin-redirect-probe.ts.
+	const verdict = await probeOrigin(Astro.url.pathname, Astro.url.search);
+	if (verdict.kind === 'redirect') {
+		return Astro.redirect(verdict.location, verdict.status);
+	}
+	if (verdict.kind === 'exists') {
+		return upstreamUnavailable('tag resolved empty but origin serves this path');
+	}
 	return Astro.rewrite('/404');
 }
 

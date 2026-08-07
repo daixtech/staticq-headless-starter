@@ -1,5 +1,6 @@
 ---
 import { lookup, upstreamUnavailable } from '../lib/upstream';
+import { probeOrigin } from '../lib/origin-redirect-probe';
 import Base from '../layouts/Base.astro';
 import ArticleHero from '../components/ArticleHero.astro';
 import ArticleByline from '../components/ArticleByline.astro';
@@ -96,6 +97,28 @@ if (bundle && bundle.type === 'post') {
 }
 
 if (!post && !page) {
+	// Nothing resolved by that slug. Before publishing a 404, ask the origin
+	// what it would do with this path - see lib/origin-redirect-probe.ts.
+	// WordPress still holds the redirect rules (renamed slugs via
+	// _wp_old_slug, SEO-plugin redirections, legacy URL maps) and none of
+	// them run now that this Worker owns the route.
+	const verdict = await probeOrigin(Astro.url.pathname, Astro.url.search);
+
+	if (verdict.kind === 'redirect') {
+		return Astro.redirect(verdict.location, verdict.status);
+	}
+
+	// The origin serves this path, so our empty lookup was wrong about it.
+	// A successful-but-EMPTY result is indistinguishable from a deletion at
+	// the call site - nothing threw, so lookup() classified it 'absent'.
+	// WordPress does return empty result sets for pages that exist: a slug
+	// query pushed past a DB timeout comes back as a perfectly well-formed
+	// `200 []`. Publishing a 404 there tells crawlers a live page is gone,
+	// and caches keep that long after the load spike passes.
+	if (verdict.kind === 'exists') {
+		return upstreamUnavailable('slug resolved empty but origin serves this path');
+	}
+
 	return Astro.rewrite('/404');
 }
 
