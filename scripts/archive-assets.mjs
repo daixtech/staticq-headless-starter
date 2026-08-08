@@ -93,9 +93,23 @@ let uploaded = 0;
 let skipped = 0;
 let failed = 0;
 
+// Runs of two or more dots are rewritten out of the key. Rollup names the
+// chunk for `[...rest].astro` `_..<hash>.css`, and an R2 key travels in the
+// URL PATH of this API - where Cloudflare's own WAF reads `..` as directory
+// traversal and answers 403 with an HTML block page. Observed: that single
+// asset failed while the other five uploaded, and the request never reached
+// R2. api.cloudflare.com is not a zone we can allowlist, so the key absorbs
+// it instead of the filename.
+//
+// MUST stay byte-identical to sanitizeKeySegment() in src/lib/asset-archive.ts
+// - this side derives keys from local filenames, the Worker derives them from
+// request paths, and a disagreement makes every asset silently miss.
+const DOT_RUN = /\.{2,}/g;
+const sanitizeKeySegment = (value) => value.replace(DOT_RUN, (run) => `.${'_'.repeat(run.length - 1)}`);
+
 for (const name of files) {
 	// Mirrors the request path: /_astro/<name> -> assets/_astro/<name>
-	const key = `${KEY_PREFIX}/_astro/${name}`;
+	const key = sanitizeKeySegment(`${KEY_PREFIX}/_astro/${name}`);
 	const url = `${CF_API}/accounts/${account}/r2/buckets/${bucketName}/objects/${encodeURIComponent(key)}`;
 
 	// Content-hashed names mean an existing key already holds identical

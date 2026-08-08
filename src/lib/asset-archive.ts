@@ -50,8 +50,37 @@ const KEY_PREFIX = 'assets';
 // every hashed build artifact under /_astro/ (build.assets default).
 export const ASSET_PATH_PREFIX = '/_astro/';
 
+// Runs of two or more dots are rewritten out of the KEY (not the file).
+//
+// Rollup derives chunk names from source modules, so `[...rest].astro` emits
+// `_..<hash>.css`. The file itself is fine and serves normally - the problem
+// is that an R2 object key travels in the URL PATH of the REST API, and
+// Cloudflare's own WAF reads `..` there as directory traversal. It answered
+// 403 with an HTML block page for exactly that one asset while the other five
+// uploaded cleanly; the request never reached R2. The endpoint is
+// api.cloudflare.com, so no zone-level allowlist can help, and percent-
+// encoding the dots is unreliable because traversal rules normally decode
+// before matching.
+//
+// So the key, not the filename, absorbs it. The transform does NOT need to be
+// reversible: the Worker never reconstructs a filename from a key, it just
+// derives the same key from the request path. `_..BEd-oB74.css` becomes
+// `_._BEd-oB74.css` - one dot kept, the rest as underscores, so length and
+// readability survive and a real file would have to be named exactly that to
+// collide (content hashes make that implausible).
+//
+// MUST stay byte-identical to the copy in scripts/archive-assets.mjs. The
+// uploader derives keys from local filenames and the Worker derives them from
+// request paths; if the two ever disagree, every archived asset silently
+// misses and the archive looks empty while being full.
+const DOT_RUN = /\.{2,}/g;
+
+function sanitizeKeySegment(value: string): string {
+	return value.replace(DOT_RUN, (run) => `.${'_'.repeat(run.length - 1)}`);
+}
+
 export function assetPathToKey(pathname: string): string {
-	return `${KEY_PREFIX}${pathname}`;
+	return `${KEY_PREFIX}${sanitizeKeySegment(pathname)}`;
 }
 
 export function isArchivableAssetPath(pathname: string): boolean {
