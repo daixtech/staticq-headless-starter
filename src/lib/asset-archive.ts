@@ -55,14 +55,27 @@ export function assetPathToKey(pathname: string): string {
 }
 
 export function isArchivableAssetPath(pathname: string): boolean {
-	// Reject traversal and nested oddities outright: the archive is a flat
-	// mirror of one build directory, and a key is derived straight from the
-	// pathname, so anything that isn't a plain /_astro/<file> is not ours.
-	return (
-		pathname.startsWith(ASSET_PATH_PREFIX) &&
-		!pathname.includes('..') &&
-		pathname.indexOf('/', ASSET_PATH_PREFIX.length) === -1
-	);
+	if (!pathname.startsWith(ASSET_PATH_PREFIX)) return false;
+	const name = pathname.slice(ASSET_PATH_PREFIX.length);
+
+	// One flat filename and nothing else. THIS is what makes traversal
+	// impossible - with no separator there is no path to escape from - and
+	// it is the only check that needs to do that job. R2 keys are opaque
+	// strings; bucket.get() resolves no paths, so dots inside a NAME are
+	// inert.
+	//
+	// Do not "harden" this by also scanning for '..' as a substring. That
+	// was the original guard and it was wrong: Astro derives chunk names
+	// from route filenames, so `[...rest].astro` emits `_..<hash>.css`.
+	// The scan refused to serve exactly that file - the stylesheet for the
+	// entire nested-page family, the widest surface on the site - while
+	// looking like a sensible security check.
+	if (name === '' || name.includes('/')) return false;
+
+	// Belt and braces for the two names that would denote a directory if
+	// anything downstream ever did resolve paths. Neither is a filename
+	// Astro can emit, so this rejects nothing real.
+	return name !== '.' && name !== '..';
 }
 
 /**
