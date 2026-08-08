@@ -99,6 +99,11 @@ or it goes stale forever.
   - Archive keys sit under `assets`, page keys under `pages`. Nothing
     enumerates or bulk-deletes the bucket, so purges and warmups leave the
     archive alone. Keep it that way.
+  - Pruning: after a full warmup, every cached page references that build,
+    so archived objects older than the warmup are safe to delete (sort by
+    Modified in the R2 dashboard). Only if the warmup covered every URL -
+    pages it missed still point at older assets, and deleting those
+    recreates the exact 404 this exists to prevent.
 
 ## URL families (the shapes both sides agree on)
 
